@@ -1,5 +1,5 @@
--- Kanban task board for icarium
--- Applied by icr_kanban_migrate() at daemon startup (idempotent).
+-- Kanban task board for krul
+-- Applied by krl_kanban_migrate() at daemon startup (idempotent).
 
 CREATE TABLE IF NOT EXISTS kanban_tasks (
   id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,

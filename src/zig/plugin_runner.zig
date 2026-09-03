@@ -1,4 +1,4 @@
-/// Plugin subprocess runner — core of the icarium indexing pipeline.
+/// Plugin subprocess runner — core of the krul indexing pipeline.
 ///
 /// Spawns the configured indexer plugin binary, feeds absolute file paths to
 /// its stdin (one per line), reads NDJSON entity/relation records from its
@@ -29,7 +29,7 @@ const DEFAULT_DIRS = [_][]const u8{ "rtl", "tb", "dv", "uvm", "." };
 
 pub fn run(
     ally:        std.mem.Allocator,
-    db:          *c.IcrDb,
+    db:          *c.KrlDb,
     project_id:  i64,
     plugin_path: []const u8,
     models_dir:  []const u8,
@@ -59,7 +59,7 @@ pub fn run(
         const plen = @min(path.len, path_z.len - 1);
         @memcpy(path_z[0..plen], path[0..plen]);
         path_z[plen] = 0;
-        _ = c.icr_entities_delete_file(db, project_id, &path_z);
+        _ = c.krl_entities_delete_file(db, project_id, &path_z);
     }
 
     // ── Null-terminate plugin path and models_dir ────────────────────────────
@@ -178,18 +178,18 @@ pub fn run(
     return stats;
 }
 
-fn processLine(stats: *Stats, db: *c.IcrDb, project_id: i64,
+fn processLine(stats: *Stats, db: *c.KrlDb, project_id: i64,
                line: []u8, line_no: i32) void {
     if (line[0] == '#') return; // comment line from plugin
 
-    var verr: c.IcrValidateError = std.mem.zeroes(c.IcrValidateError);
-    if (c.icr_validate_record(line.ptr, line_no, &verr) != 0) {
+    var verr: c.KrlValidateError = std.mem.zeroes(c.KrlValidateError);
+    if (c.krl_validate_record(line.ptr, line_no, &verr) != 0) {
         log.warn("line {d} invalid: {s}", .{ line_no, std.mem.sliceTo(&verr.message, 0) });
         stats.errors += 1;
         return;
     }
 
-    if (c.icr_ingest_record(db, project_id, line.ptr) == 0) {
+    if (c.krl_ingest_record(db, project_id, line.ptr) == 0) {
         if (std.mem.indexOf(u8, line, "\"entity\"") != null) {
             stats.entities += 1;
         } else {

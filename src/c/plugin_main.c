@@ -1,11 +1,11 @@
 /*
- * icarium-indexer-codebert — built-in NER indexer plugin
+ * krul-indexer-codebert — built-in NER indexer plugin
  *
  * Modes (selected via argv):
  *   (default)         stdin: file paths → stdout: entity NDJSON
  *   --encode-server   stdin: text lines → stdout: {"embed":[...768 floats...]}
  *
- * argv[1] : optional models directory (overrides ICARIUM_MODELS env),
+ * argv[1] : optional models directory (overrides KRUL_MODELS env),
  *           OR the --encode-server flag if that is the only argument.
  * argv[2] : models directory when argv[1] is --encode-server.
  *
@@ -88,7 +88,7 @@ static const char *json_escape(const char *s, char *buf, size_t buf_size) {
 
 /* ── Per-file indexing ────────────────────────────────────────────────────── */
 
-static void index_file(IcrRuntime *rt, IcrTok *tok, const char *file_path) {
+static void index_file(KrlRuntime *rt, KrlTok *tok, const char *file_path) {
     FILE *f = fopen(file_path, "r");
     if (!f) {
         fprintf(stderr, "# skip %s: %s\n", file_path, strerror(errno));
@@ -105,12 +105,12 @@ static void index_file(IcrRuntime *rt, IcrTok *tok, const char *file_path) {
     source[n] = '\0';
     fclose(f);
 
-    int64_t ids[ICR_MAX_SEQ], mask_arr[ICR_MAX_SEQ];
-    int seq_len = icr_tok_encode(tok, source, ids, mask_arr, ICR_MAX_SEQ);
+    int64_t ids[KRL_MAX_SEQ], mask_arr[KRL_MAX_SEQ];
+    int seq_len = krl_tok_encode(tok, source, ids, mask_arr, KRL_MAX_SEQ);
     if (seq_len < 2) { free(source); return; }
 
-    IcrNerResult ner = {0};
-    if (icr_ner_run(rt, ids, mask_arr, seq_len, &ner) != 0) {
+    KrlNerResult ner = {0};
+    if (krl_ner_run(rt, ids, mask_arr, seq_len, &ner) != 0) {
         fprintf(stderr, "# ner error: %s\n", file_path);
         free(source);
         return;
@@ -129,7 +129,7 @@ static void index_file(IcrRuntime *rt, IcrTok *tok, const char *file_path) {
         while (i < ner.seq_len - 1 && ner.labels[i] == i_label) i++;
 
         char name[128];
-        int nlen = icr_tok_decode(tok, ids + span_start, i - span_start,
+        int nlen = krl_tok_decode(tok, ids + span_start, i - span_start,
                                   name, sizeof name);
         if (nlen <= 0 || name[0] == '\0') continue;
 
@@ -148,7 +148,7 @@ static void index_file(IcrRuntime *rt, IcrTok *tok, const char *file_path) {
                partition, kind, esc_name, esc_file, line, (double)conf);
     }
 
-    icr_ner_result_free(&ner);
+    krl_ner_result_free(&ner);
     free(source);
     fflush(stdout);
 }
@@ -158,7 +158,7 @@ static void index_file(IcrRuntime *rt, IcrTok *tok, const char *file_path) {
 /* Reads text lines from stdin; for each, emits {"embed":[...768 floats...]}.
  * Outputs {"embed":null} on tokenization or inference failure so the daemon
  * always gets one response per request and the protocol stays in sync. */
-static int run_encode_server(IcrRuntime *rt, IcrTok *tok) {
+static int run_encode_server(KrlRuntime *rt, KrlTok *tok) {
     char line[8192];
     while (fgets(line, (int)sizeof line, stdin)) {
         size_t len = strlen(line);
@@ -166,23 +166,23 @@ static int run_encode_server(IcrRuntime *rt, IcrTok *tok) {
             line[--len] = '\0';
         if (len == 0) continue;
 
-        int64_t ids[ICR_MAX_SEQ], mask[ICR_MAX_SEQ];
-        int seq_len = icr_tok_encode(tok, line, ids, mask, ICR_MAX_SEQ);
+        int64_t ids[KRL_MAX_SEQ], mask[KRL_MAX_SEQ];
+        int seq_len = krl_tok_encode(tok, line, ids, mask, KRL_MAX_SEQ);
         if (seq_len < 2) {
             fputs("{\"embed\":null}\n", stdout);
             fflush(stdout);
             continue;
         }
 
-        IcrEmbed emb;
-        if (icr_encode_run(rt, ids, mask, seq_len, &emb) != 0) {
+        KrlEmbed emb;
+        if (krl_encode_run(rt, ids, mask, seq_len, &emb) != 0) {
             fputs("{\"embed\":null}\n", stdout);
             fflush(stdout);
             continue;
         }
 
         fputs("{\"embed\":[", stdout);
-        for (int i = 0; i < ICR_EMBED_DIM; i++) {
+        for (int i = 0; i < KRL_EMBED_DIM; i++) {
             if (i > 0) fputc(',', stdout);
             fprintf(stdout, "%.6g", (double)emb.embed[i]);
         }
@@ -205,7 +205,7 @@ int main(int argc, char **argv) {
             models_dir = argv[i];
         }
     }
-    if (!models_dir) models_dir = getenv("ICARIUM_MODELS");
+    if (!models_dir) models_dir = getenv("KRUL_MODELS");
     if (!models_dir || models_dir[0] == '\0') models_dir = "models";
 
     char ner_path[1024], enc_path[1024], voc_path[1024], mrg_path[1024];
@@ -214,16 +214,16 @@ int main(int argc, char **argv) {
     snprintf(voc_path, sizeof voc_path, "%s/vocab.bin",    models_dir);
     snprintf(mrg_path, sizeof mrg_path, "%s/merges.bin",   models_dir);
 
-    IcrTok *tok = icr_tok_load(voc_path, mrg_path);
+    KrlTok *tok = krl_tok_load(voc_path, mrg_path);
     if (!tok) {
         fprintf(stderr, "error: tokenizer load failed (%s, %s)\n",
                 voc_path, mrg_path);
         return 1;
     }
 
-    IcrRuntime *rt = icr_runtime_load(ner_path, enc_path);
+    KrlRuntime *rt = krl_runtime_load(ner_path, enc_path);
     if (!rt) {
-        icr_tok_free(tok);
+        krl_tok_free(tok);
         fprintf(stderr, "error: ONNX runtime load failed (%s, %s)\n",
                 ner_path, enc_path);
         return 1;
@@ -244,7 +244,7 @@ int main(int argc, char **argv) {
         rc = 0;
     }
 
-    icr_runtime_free(rt);
-    icr_tok_free(tok);
+    krl_runtime_free(rt);
+    krl_tok_free(tok);
     return rc;
 }

@@ -1,6 +1,6 @@
 // Long-running encoder subprocess for tier-3 router embedding.
 //
-// Spawns icarium-indexer-codebert with --encode-server once at daemon startup.
+// Spawns krul-indexer-codebert with --encode-server once at daemon startup.
 // The process stays alive for the daemon's lifetime: the daemon writes one text
 // line per encoding request and reads one {"embed":[...768 floats...]} line back.
 // No per-query subprocess overhead — ONNX is loaded once.
@@ -28,7 +28,7 @@ var g_rpos:  usize     = 0;
 pub fn isRunning() bool { return g_pid > 0; }
 
 // start spawns the plugin in --encode-server mode.
-// plugin_path: path to icarium-indexer-codebert binary.
+// plugin_path: path to krul-indexer-codebert binary.
 // models_dir:  path to the models directory (may be empty to use default).
 // Fails silently if models_dir is empty or the binary cannot be found —
 // the router falls back to .embedding_needed in that case.

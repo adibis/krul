@@ -4,7 +4,7 @@ const daemon = @import("daemon.zig");
 const setup = @import("setup.zig");
 const index_cmd = @import("index_cmd.zig");
 
-const log = std.log.scoped(.icariumd);
+const log = std.log.scoped(.kruld);
 
 pub const std_options = std.Options{
     .log_level = .info,
@@ -44,7 +44,7 @@ fn usage(prog: []const u8) void {
         \\Usage: {s} <command>
         \\
         \\Commands:
-        \\  init     Initialize icarium in the current project root
+        \\  init     Initialize krul in the current project root
         \\  start    Start the daemon (daemonizes by default)
         \\  stop     Stop a running daemon
         \\  status   Show daemon status and task queue stats

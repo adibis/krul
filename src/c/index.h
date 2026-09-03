@@ -15,10 +15,10 @@
 
 /* Index one source file.
  * Returns number of entities inserted (≥0) or -1 on error. */
-int icr_index_file(IcrRuntime *rt, IcrTok *tok, IcrDb *db,
+int krl_index_file(KrlRuntime *rt, KrlTok *tok, KrlDb *db,
                    int64_t project_id, const char *file_path);
 
 /* Walk dir_path recursively, indexing all SV/UVM files found.
  * Returns total entities inserted across all files, or -1 on fatal error. */
-int icr_index_dir(IcrRuntime *rt, IcrTok *tok, IcrDb *db,
+int krl_index_dir(KrlRuntime *rt, KrlTok *tok, KrlDb *db,
                   int64_t project_id, const char *dir_path);

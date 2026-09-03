@@ -114,7 +114,7 @@ fn runStage(
 
             var stdout: [4096]u8 = undefined;
             var exit: c_int = 0;
-            _ = c.icr_exec_shell(cmd_z.ptr, &stdout, stdout.len, &exit);
+            _ = c.krl_exec_shell(cmd_z.ptr, &stdout, stdout.len, &exit);
             const n = std.mem.indexOfScalar(u8, &stdout, 0) orelse stdout.len;
             log.info("stage '{s}' exit={d} out={d}B", .{ stage.id, exit, n });
 

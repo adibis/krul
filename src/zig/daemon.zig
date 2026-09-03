@@ -10,7 +10,7 @@ const gear_registry   = @import("gear_registry.zig");
 const plugin_registry = @import("plugin_registry.zig");
 const embedr          = @import("embed_runner.zig");
 
-const log = std.log.scoped(.icariumd);
+const log = std.log.scoped(.kruld);
 
 pub fn cmd_start(io: std.Io) !void {
     const pid1 = std.c.fork();
@@ -28,21 +28,21 @@ pub fn cmd_start(io: std.Io) !void {
 
     write_pidfile(io) catch |err| log.warn("could not write PID file: {}", .{err});
 
-    q.g_db = c.icr_db_open(q.default_conninfo);
+    q.g_db = c.krl_db_open(q.default_conninfo);
     if (q.g_db) |db| {
-        if (c.icr_db_migrate(db) == 0) {
+        if (c.krl_db_migrate(db) == 0) {
             log.info("postgresql connected ({s})", .{q.default_conninfo});
         } else {
             log.warn("postgresql migration failed — running without persistence", .{});
         }
-        _ = c.icr_kanban_migrate(db);
+        _ = c.krl_kanban_migrate(db);
     } else {
         log.warn("postgresql unavailable — task queue is in-memory only", .{});
     }
 
     // Load config first — embed server and LLM both need it.
     var cfg_buf: [4096]u8 = undefined;
-    const cfg = config.load(&cfg_buf, "icarium.toml") catch config.Config{};
+    const cfg = config.load(&cfg_buf, "krul.toml") catch config.Config{};
     llm.init(io, cfg.llm_endpoint, cfg.llm_model, cfg.llm_api_key_env);
 
     gear_registry.loadAll(q.g_ally) catch |e|
@@ -57,7 +57,7 @@ pub fn cmd_start(io: std.Io) !void {
     gear_registry.loadEmbeddings(q.g_ally) catch |e|
         log.warn("trigger embedding failed: {}", .{e});
 
-    log.info("icariumd started (pid={})", .{std.c.getpid()});
+    log.info("kruld started (pid={})", .{std.c.getpid()});
 
     const executor_thread = try std.Thread.spawn(.{}, q.executor_loop, .{{}});
     executor_thread.detach();
@@ -107,28 +107,28 @@ pub fn cmd_stop(io: std.Io, ally: std.mem.Allocator) !void {
 
 pub fn cmd_status(io: std.Io, ally: std.mem.Allocator) !void {
     const pid_str = Dir.cwd().readFileAlloc(io, q.pid_path, ally, .limited(64)) catch {
-        std.debug.print("icariumd: not running\n", .{});
+        std.debug.print("kruld: not running\n", .{});
         return;
     };
     defer ally.free(pid_str);
 
     const pid = std.fmt.parseInt(std.c.pid_t,
         std.mem.trim(u8, pid_str, &std.ascii.whitespace), 10) catch {
-        std.debug.print("icariumd: corrupt PID file\n", .{});
+        std.debug.print("kruld: corrupt PID file\n", .{});
         return;
     };
 
     std.posix.kill(pid, @enumFromInt(0)) catch {
-        std.debug.print("icariumd: stale PID (pid={d} not running)\n", .{pid});
+        std.debug.print("kruld: stale PID (pid={d} not running)\n", .{pid});
         return;
     };
 
     const unix_addr = net.UnixAddress.init(q.sock_path) catch {
-        std.debug.print("icariumd: pid={d} running but address invalid\n", .{pid});
+        std.debug.print("kruld: pid={d} running but address invalid\n", .{pid});
         return;
     };
     var stream = unix_addr.connect(io) catch {
-        std.debug.print("icariumd: pid={d} running but socket unreachable\n", .{pid});
+        std.debug.print("kruld: pid={d} running but socket unreachable\n", .{pid});
         return;
     };
     defer stream.close(io);
@@ -141,5 +141,5 @@ pub fn cmd_status(io: std.Io, ally: std.mem.Allocator) !void {
     var read_buf: [4096]u8 = undefined;
     var reader = stream.reader(io, &read_buf);
     const resp = try reader.interface.takeDelimiterExclusive('\n');
-    std.debug.print("icariumd: pid={d} {s}\n", .{ pid, resp });
+    std.debug.print("kruld: pid={d} {s}\n", .{ pid, resp });
 }

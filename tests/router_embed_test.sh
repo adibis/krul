@@ -4,14 +4,14 @@
 # no literal trigger words) and verifies they route to the correct gear.
 #
 # Requirements:
-#   - icariumd running with gears loaded AND encode-server started
-#   - ICARIUM_MODELS pointing to the models directory (or icarium.toml present)
+#   - kruld running with gears loaded AND encode-server started
+#   - KRUL_MODELS pointing to the models directory (or krul.toml present)
 #   - The four built-in gears must be loaded (close_coverage, triage, simulate, debug)
 #
 # Usage: ./tests/router_embed_test.sh
 set -euo pipefail
 
-SOCK="${ICARIUM_SOCK:-/tmp/icarium.sock}"
+SOCK="${KRUL_SOCK:-/tmp/krul.sock}"
 PASS=0
 FAIL=0
 
@@ -83,7 +83,7 @@ if [[ $FAIL -gt 0 ]]; then
     echo
     echo "Tip: tier-3 failures usually mean the encode-server is not running"
     echo "or the embedding model was not trained on similar phrasing."
-    echo "Check 'icariumd status' and that ICARIUM_MODELS is set correctly."
+    echo "Check 'kruld status' and that KRUL_MODELS is set correctly."
 fi
 
 [[ $FAIL -eq 0 ]]

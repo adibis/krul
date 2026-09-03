@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12",
-  "$id": "https://icarium.io/schema/plugin.json",
-  "title": "Icarium Plugin Record",
-  "description": "One newline-delimited JSON line emitted by an Icarium indexer plugin. Validated by icariumd before DB insertion. See ONTOLOGY.md §7 for full specification.",
+  "$id": "https://krul.io/schema/plugin.json",
+  "title": "Krul Plugin Record",
+  "description": "One newline-delimited JSON line emitted by an Krul indexer plugin. Validated by kruld before DB insertion. See ONTOLOGY.md §7 for full specification.",
   "oneOf": [
     { "$ref": "#/$defs/EntityRecord" },
     { "$ref": "#/$defs/RelationRecord" }
@@ -48,7 +48,7 @@
     "EntityRecord": {
       "type": "object",
       "title": "Entity Record",
-      "description": "Declares one entity to be inserted into the Icarium knowledge graph.",
+      "description": "Declares one entity to be inserted into the Krul knowledge graph.",
       "required": ["type", "partition", "kind", "name", "file", "line_start", "confidence"],
       "additionalProperties": false,
       "properties": {

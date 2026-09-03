@@ -14,7 +14,7 @@ pub fn build(b: *std.Build) void {
     const pq_lib = b.option([]const u8, "pq-lib",
         "libpq lib dir")     orelse "/opt/homebrew/opt/postgresql@16/lib";
 
-    // ── libicarium_core — daemon C layer (db + validate; NO onnxruntime) ─────
+    // ── libkrul_core — daemon C layer (db + validate; NO onnxruntime) ─────
     const core_mod = b.createModule(.{
         .root_source_file = null,
         .target   = target,
@@ -31,13 +31,13 @@ pub fn build(b: *std.Build) void {
     core_mod.linkSystemLibrary("pq", .{});
 
     const core_lib = b.addLibrary(.{
-        .name       = "icarium_core",
+        .name       = "krul_core",
         .root_module = core_mod,
         .linkage    = .static,
     });
     b.installArtifact(core_lib);
 
-    // ── icariumd — daemon (Zig + libicarium_core; NO onnxruntime) ────────────
+    // ── kruld — daemon (Zig + libkrul_core; NO onnxruntime) ────────────
     const daemon_mod = b.createModule(.{
         .root_source_file = b.path("src/zig/main.zig"),
         .target   = target,
@@ -51,12 +51,12 @@ pub fn build(b: *std.Build) void {
     daemon_mod.linkLibrary(core_lib);
 
     const daemon = b.addExecutable(.{
-        .name        = "icariumd",
+        .name        = "kruld",
         .root_module = daemon_mod,
     });
     b.installArtifact(daemon);
 
-    // ── icarium — CLI client ──────────────────────────────────────────────────
+    // ── krul — CLI client ──────────────────────────────────────────────────
     const cli_mod = b.createModule(.{
         .root_source_file = b.path("src/zig/cli.zig"),
         .target   = target,
@@ -64,12 +64,12 @@ pub fn build(b: *std.Build) void {
         .link_libc = true,
     });
     const cli = b.addExecutable(.{
-        .name        = "icarium",
+        .name        = "krul",
         .root_module = cli_mod,
     });
     b.installArtifact(cli);
 
-    // ── libicarium_ner — NER/ONNX C layer (plugin binary only) ───────────────
+    // ── libkrul_ner — NER/ONNX C layer (plugin binary only) ───────────────
     const ner_mod = b.createModule(.{
         .root_source_file = null,
         .target   = target,
@@ -86,12 +86,12 @@ pub fn build(b: *std.Build) void {
     ner_mod.linkSystemLibrary("onnxruntime", .{});
 
     const ner_lib = b.addLibrary(.{
-        .name        = "icarium_ner",
+        .name        = "krul_ner",
         .root_module = ner_mod,
         .linkage     = .static,
     });
 
-    // ── icarium-indexer-codebert — built-in NER plugin binary ────────────────
+    // ── krul-indexer-codebert — built-in NER plugin binary ────────────────
     const plugin_mod = b.createModule(.{
         .root_source_file = null,
         .target   = target,
@@ -109,7 +109,7 @@ pub fn build(b: *std.Build) void {
     plugin_mod.linkLibrary(ner_lib);
 
     const plugin = b.addExecutable(.{
-        .name        = "icarium-indexer-codebert",
+        .name        = "krul-indexer-codebert",
         .root_module = plugin_mod,
     });
     b.installArtifact(plugin);

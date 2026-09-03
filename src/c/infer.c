@@ -21,7 +21,7 @@ static int ort_init(void) {
     do {                                                                  \
         OrtStatus *_s = (expr);                                           \
         if (_s) {                                                         \
-            fprintf(stderr, "[icarium] ORT error: %s\n",                 \
+            fprintf(stderr, "[krul] ORT error: %s\n",                 \
                     g_ort->GetErrorMessage(_s));                          \
             g_ort->ReleaseStatus(_s);                                     \
             return -1;                                                    \
@@ -32,7 +32,7 @@ static int ort_init(void) {
     do {                                                                  \
         OrtStatus *_s = (expr);                                           \
         if (_s) {                                                         \
-            fprintf(stderr, "[icarium] ORT error: %s\n",                 \
+            fprintf(stderr, "[krul] ORT error: %s\n",                 \
                     g_ort->GetErrorMessage(_s));                          \
             g_ort->ReleaseStatus(_s);                                     \
             goto label;                                                   \
@@ -41,7 +41,7 @@ static int ort_init(void) {
 
 /* ---- Runtime struct ----------------------------------------------------- */
 
-struct IcrRuntime {
+struct KrlRuntime {
     OrtEnv            *env;
     OrtSessionOptions *opts;
     OrtSession        *ner_session;
@@ -51,15 +51,15 @@ struct IcrRuntime {
 
 /* ---- Load --------------------------------------------------------------- */
 
-IcrRuntime *icr_runtime_load(const char *ner_path, const char *encoder_path) {
+KrlRuntime *krl_runtime_load(const char *ner_path, const char *encoder_path) {
     if (ort_init() != 0) return NULL;
 
-    IcrRuntime *rt = calloc(1, sizeof(*rt));
+    KrlRuntime *rt = calloc(1, sizeof(*rt));
     if (!rt) return NULL;
 
     OrtStatus *s;
 
-    s = g_ort->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "icarium", &rt->env);
+    s = g_ort->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "krul", &rt->env);
     if (s) { g_ort->ReleaseStatus(s); free(rt); return NULL; }
 
     s = g_ort->CreateSessionOptions(&rt->opts);
@@ -82,11 +82,11 @@ IcrRuntime *icr_runtime_load(const char *ner_path, const char *encoder_path) {
     return rt;
 
 fail:
-    icr_runtime_free(rt);
+    krl_runtime_free(rt);
     return NULL;
 }
 
-void icr_runtime_free(IcrRuntime *rt) {
+void krl_runtime_free(KrlRuntime *rt) {
     if (!rt) return;
     if (rt->mem_info)    g_ort->ReleaseMemoryInfo(rt->mem_info);
     if (rt->ner_session) g_ort->ReleaseSession(rt->ner_session);
@@ -98,7 +98,7 @@ void icr_runtime_free(IcrRuntime *rt) {
 
 /* ---- Tensor helpers ------------------------------------------------------ */
 
-static OrtValue *make_int64_tensor(IcrRuntime *rt,
+static OrtValue *make_int64_tensor(KrlRuntime *rt,
                                    const int64_t *data, int64_t batch, int64_t seq) {
     int64_t shape[2] = { batch, seq };
     OrtValue *tensor = NULL;
@@ -113,8 +113,8 @@ static OrtValue *make_int64_tensor(IcrRuntime *rt,
 
 /* ---- NER run ------------------------------------------------------------ */
 
-int icr_ner_run(IcrRuntime *rt, const int64_t *input_ids, const int64_t *attention_mask,
-                int seq_len, IcrNerResult *out) {
+int krl_ner_run(KrlRuntime *rt, const int64_t *input_ids, const int64_t *attention_mask,
+                int seq_len, KrlNerResult *out) {
     if (!rt || !rt->ner_session || !out) return -1;
 
     int64_t batch = 1;
@@ -179,7 +179,7 @@ int icr_ner_run(IcrRuntime *rt, const int64_t *input_ids, const int64_t *attenti
     return 0;
 }
 
-void icr_ner_result_free(IcrNerResult *r) {
+void krl_ner_result_free(KrlNerResult *r) {
     if (!r) return;
     free(r->labels);
     free(r->scores);
@@ -190,8 +190,8 @@ void icr_ner_result_free(IcrNerResult *r) {
 
 /* ---- Encoder run -------------------------------------------------------- */
 
-int icr_encode_run(IcrRuntime *rt, const int64_t *input_ids, const int64_t *attention_mask,
-                   int seq_len, IcrEmbed *out) {
+int krl_encode_run(KrlRuntime *rt, const int64_t *input_ids, const int64_t *attention_mask,
+                   int seq_len, KrlEmbed *out) {
     if (!rt || !rt->enc_session || !out) return -1;
 
     int64_t batch = 1;
@@ -218,7 +218,7 @@ int icr_encode_run(IcrRuntime *rt, const int64_t *input_ids, const int64_t *atte
 
     float *pooled = NULL;
     g_ort->GetTensorMutableData(outputs[0], (void **)&pooled);
-    memcpy(out->embed, pooled, ICR_EMBED_DIM * sizeof(float));
+    memcpy(out->embed, pooled, KRL_EMBED_DIM * sizeof(float));
 
     g_ort->ReleaseValue(outputs[0]);
     return 0;

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # router_classify_test.sh — integration test for router.classify IPC method.
-# Requires icariumd to be running with gears loaded.
+# Requires kruld to be running with gears loaded.
 # Usage: ./tests/router_classify_test.sh
 set -euo pipefail
 
-SOCK="${ICARIUM_SOCK:-/tmp/icarium.sock}"
+SOCK="${KRUL_SOCK:-/tmp/krul.sock}"
 PASS=0
 FAIL=0
 

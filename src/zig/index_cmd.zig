@@ -11,16 +11,16 @@ pub fn cmd_index(ally: std.mem.Allocator, args: []const []const u8) !void {
 
     // ── Load config ──────────────────────────────────────────────────────────
     var config_buf: [8192]u8 = undefined;
-    const config = try cfg.load(&config_buf, "icarium.toml");
+    const config = try cfg.load(&config_buf, "krul.toml");
 
     // ── Resolve plugin path ───────────────────────────────────────────────────
     const plugin_path = config.indexer_plugin;
 
     // ── Resolve models dir ────────────────────────────────────────────────────
-    // Priority: config > ICARIUM_MODELS env > empty (plugin uses its own default)
+    // Priority: config > KRUL_MODELS env > empty (plugin uses its own default)
     var models_dir = config.indexer_models_dir;
     if (models_dir.len == 0) {
-        const env = std.c.getenv("ICARIUM_MODELS");
+        const env = std.c.getenv("KRUL_MODELS");
         if (env != null) models_dir = std.mem.sliceTo(env.?, 0);
     }
 
@@ -30,12 +30,12 @@ pub fn cmd_index(ally: std.mem.Allocator, args: []const []const u8) !void {
     @memcpy(conninfo_z[0..cilen], config.db_conninfo[0..cilen]);
     conninfo_z[cilen] = 0;
 
-    const db = c.icr_db_open(&conninfo_z) orelse {
+    const db = c.krl_db_open(&conninfo_z) orelse {
         log.err("cannot connect to PostgreSQL ({s})", .{config.db_conninfo});
         std.process.exit(1);
     };
-    defer c.icr_db_close(db);
-    _ = c.icr_db_migrate(db);
+    defer c.krl_db_close(db);
+    _ = c.krl_db_migrate(db);
 
     // ── Resolve project ───────────────────────────────────────────────────────
     var root_z: [4096]u8 = undefined;
@@ -52,7 +52,7 @@ pub fn cmd_index(ally: std.mem.Allocator, args: []const []const u8) !void {
     @memcpy(proj_z[0..plen], proj_name[0..plen]);
     proj_z[plen] = 0;
 
-    const project_id = c.icr_project_get_or_create(db, &proj_z, &root_z);
+    const project_id = c.krl_project_get_or_create(db, &proj_z, &root_z);
     if (project_id < 0) {
         log.err("cannot create project in DB", .{});
         std.process.exit(1);

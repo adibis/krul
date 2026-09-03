@@ -160,7 +160,7 @@ static int merge_lookup(const MergeIndex *idx, uint32_t count,
 
 /* ---- Tokenizer struct --------------------------------------------------- */
 
-struct IcrTok {
+struct KrlTok {
     VocabHT    vocab;
     char      **id_to_str;  /* reverse map: token id → string (borrowed from vocab) */
     uint32_t    vocab_size;
@@ -177,10 +177,10 @@ static int read_u16(FILE *f, uint16_t *v) {
     return fread(v, 2, 1, f) == 1;
 }
 
-IcrTok *icr_tok_load(const char *vocab_path, const char *merges_path) {
+KrlTok *krl_tok_load(const char *vocab_path, const char *merges_path) {
     init_byte_table();
 
-    IcrTok *tok = calloc(1, sizeof(*tok));
+    KrlTok *tok = calloc(1, sizeof(*tok));
     if (!tok) return NULL;
 
     /* --- vocab.bin --- */
@@ -270,15 +270,15 @@ IcrTok *icr_tok_load(const char *vocab_path, const char *merges_path) {
 fail_m:
     fclose(mf);
 fail_cleanup:
-    icr_tok_free(tok);
+    krl_tok_free(tok);
     return NULL;
 fail_v:
     fclose(vf);
-    icr_tok_free(tok);
+    krl_tok_free(tok);
     return NULL;
 }
 
-void icr_tok_free(IcrTok *tok) {
+void krl_tok_free(KrlTok *tok) {
     if (!tok) return;
     free(tok->vocab.buckets);
     free(tok->vocab.entries);
@@ -305,7 +305,7 @@ static BpeNode bpe_buf[BPE_MAX_CHARS];
 
 /* Find the minimum-rank merge across all adjacent pairs in the list.
  * Returns 1 if found, 0 if no mergeable pair exists. */
-static int bpe_best_merge(const IcrTok *tok, int head,
+static int bpe_best_merge(const KrlTok *tok, int head,
                           int *out_pos, uint32_t *out_rank, uint32_t *out_result) {
     *out_rank = UINT32_MAX;
     int found = 0;
@@ -327,11 +327,11 @@ static int bpe_best_merge(const IcrTok *tok, int head,
     return found;
 }
 
-int icr_tok_encode(const IcrTok *tok, const char *text,
+int krl_tok_encode(const KrlTok *tok, const char *text,
                    int64_t *out_ids, int64_t *out_mask, int max_len) {
     if (!tok || !text || !out_ids || max_len < 2) return -1;
 
-    out_ids[0] = ICR_TOK_BOS;
+    out_ids[0] = KRL_TOK_BOS;
     if (out_mask) out_mask[0] = 1;
     int out_pos = 1;
 
@@ -366,7 +366,7 @@ int icr_tok_encode(const IcrTok *tok, const char *text,
         gpref[gpref_len] = '\0';
         uint32_t gpref_id;
         if (!ht_lookup(&tok->vocab, gpref, gpref_len, &gpref_id))
-            gpref_id = ICR_TOK_UNK;
+            gpref_id = KRL_TOK_UNK;
         bpe_buf[n_nodes] = (BpeNode){ .id = gpref_id, .next = n_nodes + 1, .prev = -1, .alive = 1 };
         n_nodes++;
 
@@ -378,7 +378,7 @@ int icr_tok_encode(const IcrTok *tok, const char *text,
             bs[bs_len] = '\0';
             uint32_t bid;
             if (!ht_lookup(&tok->vocab, bs, bs_len, &bid))
-                bid = ICR_TOK_UNK;
+                bid = KRL_TOK_UNK;
             bpe_buf[n_nodes] = (BpeNode){
                 .id = bid, .next = n_nodes + 1, .prev = n_nodes - 1, .alive = 1
             };
@@ -415,7 +415,7 @@ int icr_tok_encode(const IcrTok *tok, const char *text,
     }
 
     /* EOS */
-    out_ids[out_pos] = (int64_t)ICR_TOK_EOS;
+    out_ids[out_pos] = (int64_t)KRL_TOK_EOS;
     if (out_mask) out_mask[out_pos] = 1;
     out_pos++;
 
@@ -428,7 +428,7 @@ int icr_tok_encode(const IcrTok *tok, const char *text,
 #define SPACE_MARKER_B0 ((unsigned char)0xC4)
 #define SPACE_MARKER_B1 ((unsigned char)0xA0)
 
-int icr_tok_decode(const IcrTok *tok,
+int krl_tok_decode(const KrlTok *tok,
                    const int64_t *ids,
                    int            n_ids,
                    char          *out,
@@ -438,7 +438,7 @@ int icr_tok_decode(const IcrTok *tok,
     for (int i = 0; i < n_ids; i++) {
         int64_t id = ids[i];
         if (id <= 0 || (uint64_t)id >= tok->vocab_size) continue;
-        if (id == ICR_TOK_BOS || id == ICR_TOK_EOS || id == ICR_TOK_PAD) continue;
+        if (id == KRL_TOK_BOS || id == KRL_TOK_EOS || id == KRL_TOK_PAD) continue;
         const char *s = tok->id_to_str[id];
         if (!s) continue;
         /* Strip leading Ġ space-marker */

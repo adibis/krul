@@ -1,10 +1,10 @@
--- Icarium schema v1
--- Run: psql icarium -f schema/001_init.sql
+-- Krul schema v1
+-- Run: psql krul -f schema/001_init.sql
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- ── Projects ──────────────────────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS icarium_projects (
+CREATE TABLE IF NOT EXISTS krul_projects (
     id         SERIAL PRIMARY KEY,
     name       TEXT NOT NULL UNIQUE,
     root_path  TEXT NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS icarium_projects (
 -- ── SV/UVM Entities (NER output) ─────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS entities (
     id          BIGSERIAL PRIMARY KEY,
-    project_id  INT  NOT NULL REFERENCES icarium_projects(id) ON DELETE CASCADE,
+    project_id  INT  NOT NULL REFERENCES krul_projects(id) ON DELETE CASCADE,
     kind        TEXT NOT NULL,   -- MODULE, PORT, COVERGROUP, UVM_AGENT, UVM_SEQUENCE, INTERFACE, …
     name        TEXT NOT NULL,
     file_path   TEXT NOT NULL,

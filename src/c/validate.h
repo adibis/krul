@@ -10,15 +10,15 @@
  */
 
 typedef enum {
-    ICR_RECORD_ENTITY   = 1,
-    ICR_RECORD_RELATION = 2,
+    KRL_RECORD_ENTITY   = 1,
+    KRL_RECORD_RELATION = 2,
 } IcrRecordType;
 
 typedef struct {
     char         message[256]; /* human-readable reason */
     IcrRecordType record_type; /* 0 if type could not be determined */
     int          line_no;      /* 1-based line number within plugin stream */
-} IcrValidateError;
+} KrlValidateError;
 
 /*
  * Validate one newline-delimited JSON record emitted by a plugin.
@@ -29,12 +29,12 @@ typedef struct {
  *
  * Returns 0 on success, -1 on validation error.
  */
-int icr_validate_record(const char *line, int line_no, IcrValidateError *err);
+int krl_validate_record(const char *line, int line_no, KrlValidateError *err);
 
 /*
  * Convenience wrapper: validate every newline-terminated line in buf[0..len].
  * Calls cb(err, userdata) for each invalid line. Returns count of failures.
  */
-typedef void (*IcrValidateCb)(const IcrValidateError *err, void *userdata);
-int icr_validate_stream(const char *buf, size_t len,
+typedef void (*IcrValidateCb)(const KrlValidateError *err, void *userdata);
+int krl_validate_stream(const char *buf, size_t len,
                         IcrValidateCb cb, void *userdata);

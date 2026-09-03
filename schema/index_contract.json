@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://icarium.io/schema/index_contract.json",
-  "title": "Icarium KB Index Contract",
-  "description": "IPC message sent to icariumd to trigger incremental knowledge-base updates. Any tool that changes source files — git hooks, CI pipelines, IDE plugins — should send this message to keep the KB current.",
+  "$id": "https://krul.io/schema/index_contract.json",
+  "title": "Krul KB Index Contract",
+  "description": "IPC message sent to kruld to trigger incremental knowledge-base updates. Any tool that changes source files — git hooks, CI pipelines, IDE plugins — should send this message to keep the KB current.",
   "type": "object",
   "required": ["method"],
   "properties": {
@@ -12,7 +12,7 @@
     },
     "project": {
       "type": "string",
-      "description": "Project name as registered with icariumd (defaults to git root basename)."
+      "description": "Project name as registered with kruld (defaults to git root basename)."
     },
     "files": {
       "type": "array",

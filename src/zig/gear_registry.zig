@@ -47,8 +47,8 @@ pub fn loadDir(ally: std.mem.Allocator, dir_path: []const u8) !void {
 
 // Load gears from all standard locations (env override, built-in, user dir).
 pub fn loadAll(ally: std.mem.Allocator) !void {
-    // 1. ICARIUM_GEARS env override
-    if (std.c.getenv("ICARIUM_GEARS")) |env| {
+    // 1. KRUL_GEARS env override
+    if (std.c.getenv("KRUL_GEARS")) |env| {
         const p = std.mem.sliceTo(env, 0);
         try loadDir(ally, p);
     }
@@ -56,11 +56,11 @@ pub fn loadAll(ally: std.mem.Allocator) !void {
     // 2. ./gears/ relative to cwd (development / installed alongside binary)
     try loadDir(ally, "gears");
 
-    // 3. ~/.icarium/gears/
+    // 3. ~/.krul/gears/
     if (std.c.getenv("HOME")) |home_env| {
         const home = std.mem.sliceTo(home_env, 0);
         var user_dir: [512]u8 = undefined;
-        const ud = std.fmt.bufPrint(&user_dir, "{s}/.icarium/gears", .{home}) catch "";
+        const ud = std.fmt.bufPrint(&user_dir, "{s}/.krul/gears", .{home}) catch "";
         if (ud.len > 0) try loadDir(ally, ud);
     }
 

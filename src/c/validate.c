@@ -109,7 +109,7 @@ static int is_valid_relation_kind(const char *kind, size_t klen)
 /* ---------------------------------------------------------------------------
  * Error helper
  * --------------------------------------------------------------------------- */
-static int fail(IcrValidateError *err, IcrRecordType rtype, int line_no,
+static int fail(KrlValidateError *err, IcrRecordType rtype, int line_no,
                 const char *fmt, ...)
 {
     if (!err) return -1;
@@ -125,7 +125,7 @@ static int fail(IcrValidateError *err, IcrRecordType rtype, int line_no,
 /* ---------------------------------------------------------------------------
  * Public API: validate one record
  * --------------------------------------------------------------------------- */
-int icr_validate_record(const char *line, int line_no, IcrValidateError *err)
+int krl_validate_record(const char *line, int line_no, KrlValidateError *err)
 {
     if (!line || line[0] == '\0') {
         return fail(err, 0, line_no, "empty line");
@@ -150,7 +150,7 @@ int icr_validate_record(const char *line, int line_no, IcrValidateError *err)
                     (int)type_len, type_val);
     }
 
-    IcrRecordType rtype = is_entity ? ICR_RECORD_ENTITY : ICR_RECORD_RELATION;
+    IcrRecordType rtype = is_entity ? KRL_RECORD_ENTITY : KRL_RECORD_RELATION;
 
     /* --- Entity record validation ---------------------------------------- */
     if (is_entity) {
@@ -261,7 +261,7 @@ int icr_validate_record(const char *line, int line_no, IcrValidateError *err)
 /* ---------------------------------------------------------------------------
  * Public API: validate a complete plugin stdout buffer
  * --------------------------------------------------------------------------- */
-int icr_validate_stream(const char *buf, size_t len,
+int krl_validate_stream(const char *buf, size_t len,
                         IcrValidateCb cb, void *userdata)
 {
     int failures = 0;
@@ -283,8 +283,8 @@ int icr_validate_stream(const char *buf, size_t len,
             line_no++;
             /* Skip blank lines and comment lines silently */
             if (tmp[0] != '\0' && tmp[0] != '#') {
-                IcrValidateError err = {0};
-                if (icr_validate_record(tmp, line_no, &err) != 0) {
+                KrlValidateError err = {0};
+                if (krl_validate_record(tmp, line_no, &err) != 0) {
                     failures++;
                     if (cb) cb(&err, userdata);
                 }

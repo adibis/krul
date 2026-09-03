@@ -38,13 +38,13 @@ var g_manifests: std.ArrayListUnmanaged(Manifest) = .empty;
 
 pub fn loadAll(ally: std.mem.Allocator) !void {
     // Scan standard plugin directories.
-    if (std.c.getenv("ICARIUM_PLUGINS")) |env|
+    if (std.c.getenv("KRUL_PLUGINS")) |env|
         try loadDir(ally, std.mem.sliceTo(env, 0));
     try loadDir(ally, "plugins");
     if (std.c.getenv("HOME")) |h| {
         const home = std.mem.sliceTo(h, 0);
         var buf: [512]u8 = undefined;
-        const p = std.fmt.bufPrint(&buf, "{s}/.icarium/plugins", .{home}) catch "";
+        const p = std.fmt.bufPrint(&buf, "{s}/.krul/plugins", .{home}) catch "";
         if (p.len > 0) try loadDir(ally, p);
     }
 

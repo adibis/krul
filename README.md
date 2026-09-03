@@ -1,12 +1,12 @@
-# icarium
+# krul
 
-A daemon-first orchestration engine for chip design verification (DV). Icarium
+A daemon-first orchestration engine for chip design verification (DV). Krul
 receives natural-language or structured commands, routes them to multi-step
 pipeline definitions called **gears**, and manages parallel LLM calls and
 simulation processes to drive DV tasks to completion.
 
-Icarium defines `schema/plugin_schema.json` — the contract that knowledge-graph
-indexer plugins must follow. What consumes that data is outside icarium's scope.
+Krul defines `schema/plugin_schema.json` — the contract that knowledge-graph
+indexer plugins must follow. What consumes that data is outside krul's scope.
 
 ---
 
@@ -20,8 +20,8 @@ indexer plugins must follow. What consumes that data is outside icarium's scope.
 | libpq | (with PG) | headers in `/opt/homebrew/opt/postgresql@16/include` |
 | ONNX Runtime | 1.17+ | for the NER indexer plugin only |
 
-The daemon (`icariumd`) and CLI (`icarium`) have **no ONNX dependency**. Only the
-`icarium-indexer-codebert` plugin binary needs ONNX Runtime.
+The daemon (`kruld`) and CLI (`krul`) have **no ONNX dependency**. Only the
+`krul-indexer-codebert` plugin binary needs ONNX Runtime.
 
 ---
 
@@ -41,9 +41,9 @@ zig build test
 ```
 
 Build outputs in `zig-out/bin/`:
-- `icariumd` — the daemon
-- `icarium` — CLI client
-- `icarium-indexer-codebert` — built-in NER extractor plugin
+- `kruld` — the daemon
+- `krul` — CLI client
+- `krul-indexer-codebert` — built-in NER extractor plugin
 
 Override library search paths if your PostgreSQL lives elsewhere:
 
@@ -59,43 +59,43 @@ zig build \
 
 ```sh
 # 1. Create the database
-createdb icarium
+createdb krul
 
 # 2. Apply the schema
-psql icarium -f schema/001_init.sql
+psql krul -f schema/001_init.sql
 
 # 3. Initialise config in your project root
-icarium init
+krul init
 
 # 4. Start the daemon
-icariumd start
+kruld start
 
 # 5. Verify
-icarium status
+krul status
 
 # 6. Index your SV/UVM project
-icarium index --project myproject --root /path/to/testbench
+krul index --project myproject --root /path/to/testbench
 
 # 7. Query indexed entities
-echo '{"method":"query","type":"entities","kind":"UVM_AGENT"}' | nc -U /tmp/icarium.sock
+echo '{"method":"query","type":"entities","kind":"UVM_AGENT"}' | nc -U /tmp/krul.sock
 ```
 
 ---
 
-## Configuration (`icarium.toml`)
+## Configuration (`krul.toml`)
 
-`icarium init` writes a template. Key sections:
+`krul init` writes a template. Key sections:
 
 ```toml
 [indexer]
-plugin    = "icarium-indexer-codebert"   # extractor plugin on $PATH
-models_dir = ""                           # default: $ICARIUM_MODELS
+plugin    = "krul-indexer-codebert"   # extractor plugin on $PATH
+models_dir = ""                           # default: $KRUL_MODELS
 
 [db]
-conninfo = "dbname=icarium host=localhost"
+conninfo = "dbname=krul host=localhost"
 
 [daemon]
-socket    = "/tmp/icarium.sock"
+socket    = "/tmp/krul.sock"
 log_level = "info"
 
 [llm]
@@ -112,12 +112,12 @@ log_level = "info"
 ## CLI Commands
 
 ```
-icariumd start     Daemonize and start listening on /tmp/icarium.sock
-icariumd stop      Send SIGTERM to the running daemon
-icariumd status    Check daemon health and print task queue stats
+kruld start     Daemonize and start listening on /tmp/krul.sock
+kruld stop      Send SIGTERM to the running daemon
+kruld status    Check daemon health and print task queue stats
 
-icarium init       Write icarium.toml in the current directory
-icarium index      Trigger incremental NER index (also called by git hook)
+krul init       Write krul.toml in the current directory
+krul index      Trigger incremental NER index (also called by git hook)
 ```
 
 ---
@@ -125,12 +125,12 @@ icarium index      Trigger incremental NER index (also called by git hook)
 ## IPC Protocol
 
 All communication is newline-delimited JSON over the Unix socket at
-`/tmp/icarium.sock`. One request per connection; the daemon writes one response
+`/tmp/krul.sock`. One request per connection; the daemon writes one response
 and closes.
 
 ```sh
 # generic client one-liner
-echo '<json>' | nc -U /tmp/icarium.sock
+echo '<json>' | nc -U /tmp/krul.sock
 ```
 
 ### Core methods
@@ -217,7 +217,7 @@ Kanban task statuses: `triage → todo → ready → running → blocked → rev
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  icariumd                                           │
+│  kruld                                           │
 │                                                     │
 │  Unix socket accept loop (single-threaded)          │
 │    └── ipc.zig — method routing                     │
@@ -230,7 +230,7 @@ Kanban task statuses: `triage → todo → ready → running → blocked → rev
 │    └── entities, relationships indexed by plugins   │
 │                                                     │
 │  Gear registry (gear_registry.zig)                  │
-│    └── loads *.gear files from gears/, ~/.icarium/  │
+│    └── loads *.gear files from gears/, ~/.krul/  │
 │                                                     │
 │  Gear executor (executor.zig)                       │
 │    └── stage loop, template fill, LLM + process    │
@@ -259,7 +259,7 @@ src/c/
   infer.c / .h         ONNX Runtime inference (NER model)
   tok.c / .h           BPE tokeniser (matches GraphCodeBERT vocab)
   index.c / .h         Entity extraction pipeline (tok → infer → emit)
-  plugin_main.c        icarium-indexer-codebert binary entry point
+  plugin_main.c        krul-indexer-codebert binary entry point
 
 src/zig/
   main.zig             CLI entry point: init / start / stop / status / index
@@ -268,15 +268,15 @@ src/zig/
   queue.zig            In-memory task queue + executor thread
   query.zig            Entity store query wrappers (db.c → IPC handlers)
   gear.zig             Gear file parser (YAML-like, arena-allocated)
-  gear_registry.zig    Gear discovery: ICARIUM_GEARS, ./gears/, ~/.icarium/gears/
+  gear_registry.zig    Gear discovery: KRUL_GEARS, ./gears/, ~/.krul/gears/
   executor.zig         Gear stage runner: template fill, LLM calls, process stages
   plugin_registry.zig  Plugin manifest parser + in-process capability dispatch
   hooks.zig            Fire-and-forget hook registry (64 slots)
   plugins/kanban.zig   Kanban capability plugin (handles kanban.* methods)
   plugin_runner.zig    Extractor plugin subprocess runner
-  config.zig           icarium.toml parser
-  index_cmd.zig        `icarium index` subcommand
-  setup.zig            `icarium init` subcommand
+  config.zig           krul.toml parser
+  index_cmd.zig        `krul index` subcommand
+  setup.zig            `krul init` subcommand
   cli.zig              Shared CLI utilities
   c.zig                C FFI bindings import
 ```
@@ -286,7 +286,7 @@ src/zig/
 ## Database Schema
 
 Applied automatically at daemon startup. Manual application:
-`psql icarium -f schema/001_init.sql`.
+`psql krul -f schema/001_init.sql`.
 
 ```
 entities           NER-extracted SV/UVM entities (kind, name, file, line, confidence,
@@ -294,7 +294,7 @@ entities           NER-extracted SV/UVM entities (kind, name, file, line, confid
 relationships      Directed structural edges between entities (kind, from_id, to_id)
 tasks              Daemon task queue (shell / index / triage jobs)
 findings           Structured LLM analysis results
-icarium_projects   Named projects with root paths
+krul_projects   Named projects with root paths
 kanban_tasks       Kanban board cards (9 statuses, gear_name, gear_run_id)
 kanban_task_links  Parent/child dependency edges between cards
 kanban_events      Audit trail (status changes, comments, finding links)
@@ -309,7 +309,7 @@ Entity kinds indexed by the built-in NER model:
 
 ## Plugin Contract
 
-Icarium publishes `schema/plugin_schema.json` — the NDJSON record format that
+Krul publishes `schema/plugin_schema.json` — the NDJSON record format that
 all extractor plugins must emit. Each line is either an entity or a relation:
 
 ```jsonc
@@ -325,7 +325,7 @@ all extractor plugins must emit. Each line is either an entity or a relation:
  "confidence": 0.90}
 ```
 
-Icarium validates every record from every plugin against this schema before
+Krul validates every record from every plugin against this schema before
 ingesting it. Any system that consumes the entity/relation tables — whether a
 graph database, a vector store, or an analysis tool — works from this contract.
 
@@ -333,7 +333,7 @@ graph database, a vector store, or an analysis tool — works from this contract
 
 ## Plugin System
 
-Icarium supports two plugin kinds, both declared via a `plugin.yaml` manifest.
+Krul supports two plugin kinds, both declared via a `plugin.yaml` manifest.
 
 ### Extractor plugins
 
@@ -341,17 +341,17 @@ Short-lived subprocesses. Read file paths from stdin, write NDJSON records to
 stdout conforming to `schema/plugin_schema.json`.
 
 ```yaml
-name: icarium-indexer-codebert
+name: krul-indexer-codebert
 kind: extractor
 emits_kinds: [UVM_AGENT, UVM_DRIVER, MODULE, COVERGROUP, ...]
 emits_relations: [HAS_DRIVER, HAS_MONITOR, EXTENDS, ...]
-executable: icarium-indexer-codebert
+executable: krul-indexer-codebert
 ```
 
-The built-in extractor (`icarium-indexer-codebert`) runs a fine-tuned
+The built-in extractor (`krul-indexer-codebert`) runs a fine-tuned
 GraphCodeBERT model (125M parameters, MIT licence) for SV/UVM named-entity
-recognition. Model files live in `$ICARIUM_MODELS` or the path set in
-`icarium.toml`.
+recognition. Model files live in `$KRUL_MODELS` or the path set in
+`krul.toml`.
 
 **Model performance** (epoch 5, 6,257-file corpus):
 F1 = 0.972 · Precision = 0.969 · Recall = 0.975 · Accuracy = 0.995
@@ -362,7 +362,7 @@ In-process method handlers registered at startup. The kanban plugin ships
 built-in.
 
 ```yaml
-name: icarium-kanban
+name: krul-kanban
 kind: capability
 provides_methods: [kanban.add, kanban.list, kanban.get, kanban.update,
                    kanban.move, kanban.link]
@@ -372,9 +372,9 @@ provides_hooks:   [on_task_complete, on_finding]
 ### Plugin discovery
 
 Daemon scans at startup:
-1. `$ICARIUM_BIN/../plugins/<name>/plugin.yaml` (built-in)
-2. `~/.icarium/plugins/<name>/plugin.yaml` (user)
-3. `./.icarium/plugins/<name>/plugin.yaml` (project, requires `ICARIUM_ENABLE_PROJECT_PLUGINS=1`)
+1. `$KRUL_BIN/../plugins/<name>/plugin.yaml` (built-in)
+2. `~/.krul/plugins/<name>/plugin.yaml` (user)
+3. `./.krul/plugins/<name>/plugin.yaml` (project, requires `KRUL_ENABLE_PROJECT_PLUGINS=1`)
 
 ### Hook system
 
@@ -396,9 +396,9 @@ Hooks are fire-and-forget notifications fired on daemon events:
 Gears are YAML-like pipeline definitions that describe multi-step DV tasks.
 The daemon loads them at startup from (in priority order):
 
-1. `ICARIUM_GEARS` env var directory
+1. `KRUL_GEARS` env var directory
 2. `./gears/` alongside the binary
-3. `~/.icarium/gears/`
+3. `~/.krul/gears/`
 
 ### Format
 
@@ -460,7 +460,7 @@ Stage types: `llm` `process` `parallel_llm` `condition`
 | 6 — Relation extraction | Heuristic SV relation extractor (EXTENDS, HAS_DRIVER, DRIVES…) | |
 | 7 — pgvector embeddings | Semantic entity search via HNSW index | |
 | 8 — TUI | Interactive REPL + live task queue + findings panes | |
-| 9 — Hardening | `icariumd doctor`, config validation, structured errors | |
+| 9 — Hardening | `kruld doctor`, config validation, structured errors | |
 
 ### Phase 3 — LLM Pool ✓
 
@@ -473,7 +473,7 @@ Backend auto-detected from endpoint URL; API key resolved from env at init time.
 
 `src/zig/executor.zig` — the stage runner called by `gear.run`. Loops through
 each stage in order; for `llm`/`parallel_llm` stages calls `llm.call()` with the
-template-filled prompt; for `process` stages runs the command via `icr_exec_shell`.
+template-filled prompt; for `process` stages runs the command via `krl_exec_shell`.
 Template engine substitutes `{input}`, `{context}`, and `{stage_id}` tokens using
 prior stage outputs. Respects `termination.condition` and `max_iterations`. All
 four built-in gear files carry concrete prompt templates.

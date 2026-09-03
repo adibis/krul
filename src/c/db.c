@@ -5,17 +5,17 @@
 #include <string.h>
 #include <sys/wait.h>
 
-struct IcrDb {
+struct KrlDb {
     PGconn *conn;
 };
 
-IcrDb *icr_db_open(const char *conninfo) {
-    IcrDb *db = calloc(1, sizeof(IcrDb));
+KrlDb *krl_db_open(const char *conninfo) {
+    KrlDb *db = calloc(1, sizeof(KrlDb));
     if (!db) return NULL;
 
     db->conn = PQconnectdb(conninfo);
     if (PQstatus(db->conn) != CONNECTION_OK) {
-        fprintf(stderr, "icr_db_open: %s\n", PQerrorMessage(db->conn));
+        fprintf(stderr, "krl_db_open: %s\n", PQerrorMessage(db->conn));
         PQfinish(db->conn);
         free(db);
         return NULL;
@@ -23,15 +23,15 @@ IcrDb *icr_db_open(const char *conninfo) {
     return db;
 }
 
-void icr_db_close(IcrDb *db) {
+void krl_db_close(KrlDb *db) {
     if (!db) return;
     PQfinish(db->conn);
     free(db);
 }
 
-int icr_db_migrate(IcrDb *db) {
+int krl_db_migrate(KrlDb *db) {
     const char *ddl =
-        "CREATE TABLE IF NOT EXISTS icarium_projects ("
+        "CREATE TABLE IF NOT EXISTS krul_projects ("
         "  id SERIAL PRIMARY KEY, name TEXT NOT NULL UNIQUE,"
         "  root_path TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW());"
 
@@ -48,7 +48,7 @@ int icr_db_migrate(IcrDb *db) {
 
         "CREATE TABLE IF NOT EXISTS entities ("
         "  id BIGSERIAL PRIMARY KEY,"
-        "  project_id BIGINT NOT NULL REFERENCES icarium_projects(id) ON DELETE CASCADE,"
+        "  project_id BIGINT NOT NULL REFERENCES krul_projects(id) ON DELETE CASCADE,"
         "  kind TEXT NOT NULL, name TEXT NOT NULL,"
         "  file_path TEXT NOT NULL, line_start INT NOT NULL DEFAULT 1,"
         "  line_end INT NOT NULL DEFAULT 1, confidence FLOAT NOT NULL DEFAULT 1.0,"
@@ -62,7 +62,7 @@ int icr_db_migrate(IcrDb *db) {
 
         "CREATE TABLE IF NOT EXISTS relationships ("
         "  id BIGSERIAL PRIMARY KEY,"
-        "  project_id BIGINT NOT NULL REFERENCES icarium_projects(id) ON DELETE CASCADE,"
+        "  project_id BIGINT NOT NULL REFERENCES krul_projects(id) ON DELETE CASCADE,"
         "  kind TEXT NOT NULL,"
         "  from_entity_id BIGINT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,"
         "  to_entity_id   BIGINT NOT NULL REFERENCES entities(id) ON DELETE CASCADE,"
@@ -77,21 +77,21 @@ int icr_db_migrate(IcrDb *db) {
     PGresult *res = PQexec(db->conn, ddl);
     int ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
     if (!ok)
-        fprintf(stderr, "icr_db_migrate: %s\n", PQerrorMessage(db->conn));
+        fprintf(stderr, "krl_db_migrate: %s\n", PQerrorMessage(db->conn));
     PQclear(res);
     return ok ? 0 : -1;
 }
 
 /* ── Task queue ─────────────────────────────────────────────────────────────── */
 
-int icr_task_insert(IcrDb *db, const char *kind, const char *params_json,
+int krl_task_insert(KrlDb *db, const char *kind, const char *params_json,
                     int64_t *task_id_out) {
     const char *sql =
         "INSERT INTO tasks(kind, params) VALUES($1, $2::jsonb) RETURNING id";
     const char *params[2] = { kind, params_json };
     PGresult *res = PQexecParams(db->conn, sql, 2, NULL, params, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        fprintf(stderr, "icr_task_insert: %s\n", PQerrorMessage(db->conn));
+        fprintf(stderr, "krl_task_insert: %s\n", PQerrorMessage(db->conn));
         PQclear(res);
         return -1;
     }
@@ -100,7 +100,7 @@ int icr_task_insert(IcrDb *db, const char *kind, const char *params_json,
     return 0;
 }
 
-int icr_task_start(IcrDb *db, int64_t task_id) {
+int krl_task_start(KrlDb *db, int64_t task_id) {
     const char *sql =
         "UPDATE tasks SET state='running', started_at=NOW() WHERE id=$1";
     char id_str[24];
@@ -108,12 +108,12 @@ int icr_task_start(IcrDb *db, int64_t task_id) {
     const char *params[1] = { id_str };
     PGresult *res = PQexecParams(db->conn, sql, 1, NULL, params, NULL, NULL, 0);
     int ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
-    if (!ok) fprintf(stderr, "icr_task_start: %s\n", PQerrorMessage(db->conn));
+    if (!ok) fprintf(stderr, "krl_task_start: %s\n", PQerrorMessage(db->conn));
     PQclear(res);
     return ok ? 0 : -1;
 }
 
-int icr_task_done(IcrDb *db, int64_t task_id, int exit_code,
+int krl_task_done(KrlDb *db, int64_t task_id, int exit_code,
                   const char *stdout_tail) {
     const char *sql =
         "UPDATE tasks SET state='done', exit_code=$2, stdout_tail=$3,"
@@ -124,12 +124,12 @@ int icr_task_done(IcrDb *db, int64_t task_id, int exit_code,
     const char *params[3] = { id_str, code_str, stdout_tail };
     PGresult *res = PQexecParams(db->conn, sql, 3, NULL, params, NULL, NULL, 0);
     int ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
-    if (!ok) fprintf(stderr, "icr_task_done: %s\n", PQerrorMessage(db->conn));
+    if (!ok) fprintf(stderr, "krl_task_done: %s\n", PQerrorMessage(db->conn));
     PQclear(res);
     return ok ? 0 : -1;
 }
 
-int icr_task_fail(IcrDb *db, int64_t task_id, const char *err_msg) {
+int krl_task_fail(KrlDb *db, int64_t task_id, const char *err_msg) {
     const char *sql =
         "UPDATE tasks SET state='failed', stdout_tail=$2,"
         " completed_at=NOW() WHERE id=$1";
@@ -138,12 +138,12 @@ int icr_task_fail(IcrDb *db, int64_t task_id, const char *err_msg) {
     const char *params[2] = { id_str, err_msg };
     PGresult *res = PQexecParams(db->conn, sql, 2, NULL, params, NULL, NULL, 0);
     int ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
-    if (!ok) fprintf(stderr, "icr_task_fail: %s\n", PQerrorMessage(db->conn));
+    if (!ok) fprintf(stderr, "krl_task_fail: %s\n", PQerrorMessage(db->conn));
     PQclear(res);
     return ok ? 0 : -1;
 }
 
-int icr_task_list_json(IcrDb *db, int limit, char *out, size_t out_size) {
+int krl_task_list_json(KrlDb *db, int limit, char *out, size_t out_size) {
     const char *sql =
         "SELECT json_agg(t) FROM ("
         "  SELECT id, kind, state, exit_code,"
@@ -156,7 +156,7 @@ int icr_task_list_json(IcrDb *db, int limit, char *out, size_t out_size) {
     const char *params[1] = { lim_str };
     PGresult *res = PQexecParams(db->conn, sql, 1, NULL, params, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        fprintf(stderr, "icr_task_list_json: %s\n", PQerrorMessage(db->conn));
+        fprintf(stderr, "krl_task_list_json: %s\n", PQerrorMessage(db->conn));
         PQclear(res);
         snprintf(out, out_size, "[]");
         return -1;
@@ -173,10 +173,10 @@ int icr_task_list_json(IcrDb *db, int limit, char *out, size_t out_size) {
 
 /* ── Project management ──────────────────────────────────────────────────────── */
 
-int64_t icr_project_get_or_create(IcrDb *db, const char *name,
+int64_t krl_project_get_or_create(KrlDb *db, const char *name,
                                    const char *root_path) {
     /* Try SELECT first */
-    const char *sel = "SELECT id FROM icarium_projects WHERE name=$1";
+    const char *sel = "SELECT id FROM krul_projects WHERE name=$1";
     const char *sel_params[1] = { name };
     PGresult *res = PQexecParams(db->conn, sel, 1, NULL, sel_params, NULL, NULL, 0);
     if (PQresultStatus(res) == PGRES_TUPLES_OK && PQntuples(res) > 0) {
@@ -188,12 +188,12 @@ int64_t icr_project_get_or_create(IcrDb *db, const char *name,
 
     /* INSERT ... ON CONFLICT DO NOTHING RETURNING id */
     const char *ins =
-        "INSERT INTO icarium_projects(name, root_path) VALUES($1,$2)"
+        "INSERT INTO krul_projects(name, root_path) VALUES($1,$2)"
         " ON CONFLICT(name) DO UPDATE SET root_path=EXCLUDED.root_path RETURNING id";
     const char *ins_params[2] = { name, root_path };
     res = PQexecParams(db->conn, ins, 2, NULL, ins_params, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        fprintf(stderr, "icr_project_get_or_create: %s\n", PQerrorMessage(db->conn));
+        fprintf(stderr, "krl_project_get_or_create: %s\n", PQerrorMessage(db->conn));
         PQclear(res);
         return -1;
     }
@@ -204,7 +204,7 @@ int64_t icr_project_get_or_create(IcrDb *db, const char *name,
 
 /* ── Entity management ───────────────────────────────────────────────────────── */
 
-int icr_entity_insert(IcrDb *db, int64_t project_id, const char *kind,
+int krl_entity_insert(KrlDb *db, int64_t project_id, const char *kind,
                       const char *name, const char *file_path,
                       int line_start, int line_end, float confidence,
                       int64_t *entity_id_out) {
@@ -220,7 +220,7 @@ int icr_entity_insert(IcrDb *db, int64_t project_id, const char *kind,
     const char *params[7] = { proj_str, kind, name, file_path, ls_str, le_str, conf_str };
     PGresult *res = PQexecParams(db->conn, sql, 7, NULL, params, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        fprintf(stderr, "icr_entity_insert: %s\n", PQerrorMessage(db->conn));
+        fprintf(stderr, "krl_entity_insert: %s\n", PQerrorMessage(db->conn));
         PQclear(res);
         return -1;
     }
@@ -231,7 +231,7 @@ int icr_entity_insert(IcrDb *db, int64_t project_id, const char *kind,
     return 0;
 }
 
-int icr_entities_delete_file(IcrDb *db, int64_t project_id,
+int krl_entities_delete_file(KrlDb *db, int64_t project_id,
                               const char *file_path) {
     const char *sql = "DELETE FROM entities WHERE project_id=$1 AND file_path=$2";
     char proj_str[24];
@@ -239,14 +239,14 @@ int icr_entities_delete_file(IcrDb *db, int64_t project_id,
     const char *params[2] = { proj_str, file_path };
     PGresult *res = PQexecParams(db->conn, sql, 2, NULL, params, NULL, NULL, 0);
     int ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
-    if (!ok) fprintf(stderr, "icr_entities_delete_file: %s\n", PQerrorMessage(db->conn));
+    if (!ok) fprintf(stderr, "krl_entities_delete_file: %s\n", PQerrorMessage(db->conn));
     PQclear(res);
     return ok ? 0 : -1;
 }
 
 /* ── Relation insertion ──────────────────────────────────────────────────────── */
 
-int icr_relation_insert(IcrDb *db, int64_t project_id,
+int krl_relation_insert(KrlDb *db, int64_t project_id,
                         const char *kind,
                         const char *from_kind, const char *from_name,
                         const char *to_kind,   const char *to_name,
@@ -285,7 +285,7 @@ int icr_relation_insert(IcrDb *db, int64_t project_id,
     const char *params[5] = { proj_str, kind, from_id_str, to_id_str, conf_str };
     r = PQexecParams(db->conn, sql, 5, NULL, params, NULL, NULL, 0);
     int ok = (PQresultStatus(r) == PGRES_COMMAND_OK);
-    if (!ok) fprintf(stderr, "icr_relation_insert: %s\n", PQerrorMessage(db->conn));
+    if (!ok) fprintf(stderr, "krl_relation_insert: %s\n", PQerrorMessage(db->conn));
     PQclear(r);
     return ok ? 0 : -1;
 }
@@ -330,7 +330,7 @@ static int copy_field(const char *src, size_t len, char *dst, size_t dst_size) {
     return 0;
 }
 
-int icr_ingest_record(IcrDb *db, int64_t project_id, const char *line) {
+int krl_ingest_record(KrlDb *db, int64_t project_id, const char *line) {
     size_t type_len = 0;
     const char *type_val = db_json_str(line, "type", &type_len);
     if (!type_val) return -1;
@@ -353,7 +353,7 @@ int icr_ingest_record(IcrDb *db, int64_t project_id, const char *line) {
         float conf = db_json_float(line, "confidence");
 
         int64_t eid = 0;
-        return icr_entity_insert(db, project_id, kind, name, file,
+        return krl_entity_insert(db, project_id, kind, name, file,
                                   line_start, line_start, conf, &eid);
     } else {
         size_t rk_len=0, fk_len=0, fn_len=0, tk_len=0, tn_len=0;
@@ -371,7 +371,7 @@ int icr_ingest_record(IcrDb *db, int64_t project_id, const char *line) {
         if (copy_field(tn, tn_len, to_name,   sizeof to_name)   < 0) return -1;
 
         float conf = db_json_float(line, "confidence");
-        return icr_relation_insert(db, project_id, kind,
+        return krl_relation_insert(db, project_id, kind,
                                     from_kind, from_name,
                                     to_kind,   to_name, conf);
     }
@@ -379,7 +379,7 @@ int icr_ingest_record(IcrDb *db, int64_t project_id, const char *line) {
 
 /* ── Shell execution ─────────────────────────────────────────────────────────── */
 
-int icr_exec_shell(const char *cmd, char *stdout_out, size_t out_size,
+int krl_exec_shell(const char *cmd, char *stdout_out, size_t out_size,
                    int *exit_code_out) {
     FILE *fp = popen(cmd, "r");
     if (!fp) {
@@ -396,8 +396,8 @@ int icr_exec_shell(const char *cmd, char *stdout_out, size_t out_size,
 
 /* ── Project lookup ──────────────────────────────────────────────────────────── */
 
-int64_t icr_project_lookup(IcrDb *db, const char *name) {
-    const char *sql = "SELECT id FROM icarium_projects WHERE name=$1";
+int64_t krl_project_lookup(KrlDb *db, const char *name) {
+    const char *sql = "SELECT id FROM krul_projects WHERE name=$1";
     const char *params[1] = { name };
     PGresult *res = PQexecParams(db->conn, sql, 1, NULL, params, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) == 0) {
@@ -411,7 +411,7 @@ int64_t icr_project_lookup(IcrDb *db, const char *name) {
 
 /* ── Gothos bundled query API ────────────────────────────────────────────────── */
 
-int icr_gothos_query_entities(IcrDb *db, int64_t project_id,
+int krl_gothos_query_entities(KrlDb *db, int64_t project_id,
                                const char *kind, const char *name_pattern,
                                char *out, size_t out_size) {
     char proj_str[24];
@@ -439,7 +439,7 @@ int icr_gothos_query_entities(IcrDb *db, int64_t project_id,
     return 0;
 }
 
-int icr_gothos_query_relations(IcrDb *db, int64_t project_id,
+int krl_gothos_query_relations(KrlDb *db, int64_t project_id,
                                 const char *from_name, const char *rel_kind,
                                 char *out, size_t out_size) {
     char proj_str[24];
@@ -470,7 +470,7 @@ int icr_gothos_query_relations(IcrDb *db, int64_t project_id,
     return 0;
 }
 
-int icr_gothos_get_context(IcrDb *db, int64_t project_id,
+int krl_gothos_get_context(KrlDb *db, int64_t project_id,
                             const char *focus_name, int depth,
                             char *out, size_t out_size) {
     (void)depth; /* depth > 1 reserved for future multi-hop traversal */
@@ -540,7 +540,7 @@ int icr_gothos_get_context(IcrDb *db, int64_t project_id,
     return 0;
 }
 
-int icr_gothos_no_covergroup(IcrDb *db, int64_t project_id,
+int krl_gothos_no_covergroup(KrlDb *db, int64_t project_id,
                               char *out, size_t out_size) {
     char proj_str[24];
     snprintf(proj_str, sizeof(proj_str), "%lld", (long long)project_id);
@@ -571,7 +571,7 @@ int icr_gothos_no_covergroup(IcrDb *db, int64_t project_id,
 
 /* ── Kanban task board ───────────────────────────────────────────────────────── */
 
-int icr_kanban_migrate(IcrDb *db) {
+int krl_kanban_migrate(KrlDb *db) {
     const char *ddl =
         "CREATE TABLE IF NOT EXISTS kanban_tasks ("
         "  id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,"
@@ -608,12 +608,12 @@ int icr_kanban_migrate(IcrDb *db) {
 
     PGresult *res = PQexec(db->conn, ddl);
     int ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
-    if (!ok) fprintf(stderr, "icr_kanban_migrate: %s\n", PQerrorMessage(db->conn));
+    if (!ok) fprintf(stderr, "krl_kanban_migrate: %s\n", PQerrorMessage(db->conn));
     PQclear(res);
     return ok ? 0 : -1;
 }
 
-int icr_kanban_add(IcrDb *db, const char *title, const char *body,
+int krl_kanban_add(KrlDb *db, const char *title, const char *body,
                    const char *gear_name, int priority,
                    char *task_id_out, size_t task_id_size) {
     const char *sql =
@@ -624,7 +624,7 @@ int icr_kanban_add(IcrDb *db, const char *title, const char *body,
     const char *params[4] = { title, body, gear_name, prio_str };
     PGresult *res = PQexecParams(db->conn, sql, 4, NULL, params, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        fprintf(stderr, "icr_kanban_add: %s\n", PQerrorMessage(db->conn));
+        fprintf(stderr, "krl_kanban_add: %s\n", PQerrorMessage(db->conn));
         PQclear(res);
         return -1;
     }
@@ -639,7 +639,7 @@ int icr_kanban_add(IcrDb *db, const char *title, const char *body,
     return 0;
 }
 
-int icr_kanban_list(IcrDb *db, const char *status, int limit,
+int krl_kanban_list(KrlDb *db, const char *status, int limit,
                     char *out, size_t out_size) {
     char lim_str[12];
     snprintf(lim_str, sizeof(lim_str), "%d", limit > 0 ? limit : 50);
@@ -653,7 +653,7 @@ int icr_kanban_list(IcrDb *db, const char *status, int limit,
     const char *params[2] = { status, lim_str };
     PGresult *res = PQexecParams(db->conn, sql, 2, NULL, params, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
-        fprintf(stderr, "icr_kanban_list: %s\n", PQerrorMessage(db->conn));
+        fprintf(stderr, "krl_kanban_list: %s\n", PQerrorMessage(db->conn));
         PQclear(res);
         snprintf(out, out_size, "[]");
         return -1;
@@ -664,7 +664,7 @@ int icr_kanban_list(IcrDb *db, const char *status, int limit,
     return 0;
 }
 
-int icr_kanban_get(IcrDb *db, const char *task_id, char *out, size_t out_size) {
+int krl_kanban_get(KrlDb *db, const char *task_id, char *out, size_t out_size) {
     const char *sql =
         "SELECT row_to_json(t)::text FROM ("
         "  SELECT k.*,"
@@ -685,7 +685,7 @@ int icr_kanban_get(IcrDb *db, const char *task_id, char *out, size_t out_size) {
     return 0;
 }
 
-int icr_kanban_move(IcrDb *db, const char *task_id, const char *new_status,
+int krl_kanban_move(KrlDb *db, const char *task_id, const char *new_status,
                     char *out, size_t out_size) {
     const char *sql =
         "UPDATE kanban_tasks SET status=$2,"
@@ -697,7 +697,7 @@ int icr_kanban_move(IcrDb *db, const char *task_id, const char *new_status,
     const char *params[2] = { task_id, new_status };
     PGresult *res = PQexecParams(db->conn, sql, 2, NULL, params, NULL, NULL, 0);
     int ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
-    if (!ok) fprintf(stderr, "icr_kanban_move: %s\n", PQerrorMessage(db->conn));
+    if (!ok) fprintf(stderr, "krl_kanban_move: %s\n", PQerrorMessage(db->conn));
     PQclear(res);
     if (!ok) { snprintf(out, out_size, "null"); return -1; }
 
@@ -710,17 +710,17 @@ int icr_kanban_move(IcrDb *db, const char *task_id, const char *new_status,
     res = PQexecParams(db->conn, ev_sql, 2, NULL, ev_p, NULL, NULL, 0);
     PQclear(res);
 
-    return icr_kanban_get(db, task_id, out, out_size);
+    return krl_kanban_get(db, task_id, out, out_size);
 }
 
-int icr_kanban_link(IcrDb *db, const char *parent_id, const char *child_id) {
+int krl_kanban_link(KrlDb *db, const char *parent_id, const char *child_id) {
     const char *sql =
         "INSERT INTO kanban_task_links(parent_id,child_id)"
         " VALUES($1,$2) ON CONFLICT DO NOTHING";
     const char *params[2] = { parent_id, child_id };
     PGresult *res = PQexecParams(db->conn, sql, 2, NULL, params, NULL, NULL, 0);
     int ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
-    if (!ok) fprintf(stderr, "icr_kanban_link: %s\n", PQerrorMessage(db->conn));
+    if (!ok) fprintf(stderr, "krl_kanban_link: %s\n", PQerrorMessage(db->conn));
     PQclear(res);
     return ok ? 0 : -1;
 }

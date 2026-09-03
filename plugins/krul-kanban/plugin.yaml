@@ -1,8 +1,8 @@
-name: icarium-kanban
+name: krul-kanban
 version: 1.0.0
 description: Kanban task board for DV work items and gear runs
 kind: capability
-executable: icarium-kanban
+executable: krul-kanban
 provides_methods:
   - kanban.add
   - kanban.list

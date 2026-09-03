@@ -78,7 +78,7 @@ static char *read_file(const char *path, size_t *out_len) {
 
 /* ── Core: index one file ─────────────────────────────────────────────────────*/
 
-int icr_index_file(IcrRuntime *rt, IcrTok *tok, IcrDb *db,
+int krl_index_file(KrlRuntime *rt, KrlTok *tok, KrlDb *db,
                    int64_t project_id, const char *file_path) {
     /* Read source */
     char *source = read_file(file_path, NULL);
@@ -87,24 +87,24 @@ int icr_index_file(IcrRuntime *rt, IcrTok *tok, IcrDb *db,
         return -1;
     }
 
-    /* Tokenize (first ICR_MAX_SEQ tokens) */
-    int64_t ids[ICR_MAX_SEQ], mask[ICR_MAX_SEQ];
-    int seq_len = icr_tok_encode(tok, source, ids, mask, ICR_MAX_SEQ);
+    /* Tokenize (first KRL_MAX_SEQ tokens) */
+    int64_t ids[KRL_MAX_SEQ], mask[KRL_MAX_SEQ];
+    int seq_len = krl_tok_encode(tok, source, ids, mask, KRL_MAX_SEQ);
     if (seq_len < 2) {
         free(source);
         return 0;
     }
 
     /* NER */
-    IcrNerResult ner = {0};
-    if (icr_ner_run(rt, ids, mask, seq_len, &ner) != 0) {
+    KrlNerResult ner = {0};
+    if (krl_ner_run(rt, ids, mask, seq_len, &ner) != 0) {
         fprintf(stderr, "index: NER failed for %s\n", file_path);
         free(source);
         return -1;
     }
 
     /* Delete stale entities for this file before inserting fresh ones */
-    icr_entities_delete_file(db, project_id, file_path);
+    krl_entities_delete_file(db, project_id, file_path);
 
     /* Extract BIO spans */
     int count = 0;
@@ -122,7 +122,7 @@ int icr_index_file(IcrRuntime *rt, IcrTok *tok, IcrDb *db,
 
         /* Decode entity name */
         char name[128];
-        int nlen = icr_tok_decode(tok, ids + span_start, span_end - span_start,
+        int nlen = krl_tok_decode(tok, ids + span_start, span_end - span_start,
                                   name, sizeof(name));
         if (nlen <= 0 || name[0] == '\0') continue;
 
@@ -133,13 +133,13 @@ int icr_index_file(IcrRuntime *rt, IcrTok *tok, IcrDb *db,
         int   line = find_line(source, name);
 
         int64_t eid = 0;
-        if (icr_entity_insert(db, project_id, kind, name,
+        if (krl_entity_insert(db, project_id, kind, name,
                               file_path, line, line, conf, &eid) == 0) {
             count++;
         }
     }
 
-    icr_ner_result_free(&ner);
+    krl_ner_result_free(&ner);
     free(source);
 
     if (count > 0)
@@ -150,7 +150,7 @@ int icr_index_file(IcrRuntime *rt, IcrTok *tok, IcrDb *db,
 
 /* ── Recursive directory walker ───────────────────────────────────────────────*/
 
-int icr_index_dir(IcrRuntime *rt, IcrTok *tok, IcrDb *db,
+int krl_index_dir(KrlRuntime *rt, KrlTok *tok, KrlDb *db,
                   int64_t project_id, const char *dir_path) {
     DIR *d = opendir(dir_path);
     if (!d) {
@@ -171,10 +171,10 @@ int icr_index_dir(IcrRuntime *rt, IcrTok *tok, IcrDb *db,
         if (stat(full, &st) != 0) continue;
 
         if (S_ISDIR(st.st_mode)) {
-            int r = icr_index_dir(rt, tok, db, project_id, full);
+            int r = krl_index_dir(rt, tok, db, project_id, full);
             if (r >= 0) total += r;
         } else if (S_ISREG(st.st_mode) && is_sv_file(ent->d_name)) {
-            int r = icr_index_file(rt, tok, db, project_id, full);
+            int r = krl_index_file(rt, tok, db, project_id, full);
             if (r >= 0) total += r;
         }
     }

@@ -1,8 +1,8 @@
-name: icarium-indexer-codebert
+name: krul-indexer-codebert
 version: 1.0.0
 description: GraphCodeBERT NER for SV/UVM entity and relation extraction
 kind: extractor
-executable: icarium-indexer-codebert
+executable: krul-indexer-codebert
 emits_kinds:
   - UVM_AGENT
   - UVM_DRIVER

@@ -1,24 +1,24 @@
 const std = @import("std");
 const Dir = std.Io.Dir;
 
-const log = std.log.scoped(.icariumd);
+const log = std.log.scoped(.kruld);
 
 pub const default_config =
-    \\# icarium configuration — https://icarium.io/docs/configuration
+    \\# krul configuration — https://krul.io/docs/configuration
     \\
     \\[indexer]
     \\# Path to indexer plugin binary (on $PATH or absolute).
-    \\# Built-in NER plugin: icarium-indexer-codebert
+    \\# Built-in NER plugin: krul-indexer-codebert
     \\# Custom plugin: any binary that reads file paths from stdin and writes
     \\# NDJSON entity/relation records to stdout (see plugin_schema.json).
-    \\plugin = "icarium-indexer-codebert"
-    \\models_dir = ""   # default: ICARIUM_MODELS env, then plugin's own default
+    \\plugin = "krul-indexer-codebert"
+    \\models_dir = ""   # default: KRUL_MODELS env, then plugin's own default
     \\
     \\[db]
-    \\conninfo = "dbname=icarium host=localhost"
+    \\conninfo = "dbname=krul host=localhost"
     \\
     \\[daemon]
-    \\socket = "/tmp/icarium.sock"
+    \\socket = "/tmp/krul.sock"
     \\log_level = "info"
     \\
     \\[llm]
@@ -36,19 +36,19 @@ pub fn cmd_init(io: std.Io, ally: std.mem.Allocator, extra_args: []const []const
     const cwd = Dir.cwd();
 
     const exists = blk: {
-        cwd.access(io, "icarium.toml", .{}) catch { break :blk false; };
+        cwd.access(io, "krul.toml", .{}) catch { break :blk false; };
         break :blk true;
     };
     if (exists) {
-        log.info("icarium.toml already exists, skipping", .{});
+        log.info("krul.toml already exists, skipping", .{});
     } else {
-        var f = try cwd.createFile(io, "icarium.toml", .{});
+        var f = try cwd.createFile(io, "krul.toml", .{});
         defer f.close(io);
         var buf: [256]u8 = undefined;
         var w = f.writer(io, &buf);
         try w.interface.writeAll(default_config);
         try w.interface.flush();
-        log.info("created icarium.toml", .{});
+        log.info("created krul.toml", .{});
     }
 
     const cwd_path = blk: {
@@ -59,7 +59,7 @@ pub fn cmd_init(io: std.Io, ally: std.mem.Allocator, extra_args: []const []const
     defer ally.free(cwd_path);
 
     try install_git_hooks(io, ally, cwd_path);
-    log.info("icarium initialized. Run 'icariumd start' to begin indexing.", .{});
+    log.info("krul initialized. Run 'kruld start' to begin indexing.", .{});
 }
 
 fn install_git_hooks(io: std.Io, ally: std.mem.Allocator, project_root: []const u8) !void {
@@ -79,8 +79,8 @@ fn install_git_hooks(io: std.Io, ally: std.mem.Allocator, project_root: []const 
     var w = f.writer(io, &buf);
     try w.interface.writeAll(
         \\#!/bin/sh
-        \\# icarium: trigger incremental index on commit
-        \\icariumd index --incremental --quiet &
+        \\# krul: trigger incremental index on commit
+        \\kruld index --incremental --quiet &
         \\
     );
     try w.interface.flush();

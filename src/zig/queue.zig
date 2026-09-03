@@ -4,9 +4,9 @@ const hooks = @import("hooks.zig");
 
 const log = std.log.scoped(.executor);
 
-pub const sock_path = "/tmp/icarium.sock";
-pub const pid_path = "/tmp/icariumd.pid";
-pub const default_conninfo = "dbname=icarium host=localhost";
+pub const sock_path = "/tmp/krul.sock";
+pub const pid_path = "/tmp/kruld.pid";
+pub const default_conninfo = "dbname=krul host=localhost";
 
 pub const TaskKind = enum { shell, index, triage };
 pub const TaskState = enum { pending, running, done, failed };
@@ -45,7 +45,7 @@ pub var g_ally: std.mem.Allocator = undefined;
 pub var g_mu: std.atomic.Mutex = .unlocked;
 pub var g_tasks: std.ArrayListUnmanaged(Task) = .empty;
 pub var g_next_id: u64 = 1;
-pub var g_db: ?*c.IcrDb = null;
+pub var g_db: ?*c.KrlDb = null;
 
 pub fn mu_lock() void {
     while (!g_mu.tryLock()) {
@@ -87,12 +87,12 @@ pub fn executor_loop(_: void) void {
         mu_unlock();
 
         if (g_db) |db| {
-            _ = c.icr_task_start(db, @intCast(task_id));
+            _ = c.krl_task_start(db, @intCast(task_id));
         }
 
         var stdout_buf: [512]u8 = undefined;
         var exit_code: c_int = 0;
-        const exec_ok = c.icr_exec_shell(cmd.ptr, &stdout_buf, stdout_buf.len, &exit_code);
+        const exec_ok = c.krl_exec_shell(cmd.ptr, &stdout_buf, stdout_buf.len, &exit_code);
 
         mu_lock();
         if (idx < g_tasks.items.len) {
@@ -122,9 +122,9 @@ pub fn executor_loop(_: void) void {
             @memcpy(tail_z[0..stdout_slice.len], stdout_slice);
             tail_z[stdout_slice.len] = 0;
             if (final_state == .done) {
-                _ = c.icr_task_done(db, @intCast(task_id), exit_code, &tail_z);
+                _ = c.krl_task_done(db, @intCast(task_id), exit_code, &tail_z);
             } else {
-                _ = c.icr_task_fail(db, @intCast(task_id), &tail_z);
+                _ = c.krl_task_fail(db, @intCast(task_id), &tail_z);
             }
         }
     }

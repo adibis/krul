@@ -1,4 +1,4 @@
-# icarium Changelog
+# krul Changelog
 
 All notable changes will be documented here.
 Format: [version/date] — what changed and why.

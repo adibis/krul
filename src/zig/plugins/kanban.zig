@@ -23,7 +23,7 @@ pub fn dispatch(method: []const u8, params: []const u8, out: []u8) []const u8 {
     return err(out, "unknown kanban method");
 }
 
-fn handleAdd(db: *c.IcrDb, params: []const u8, out: []u8) []const u8 {
+fn handleAdd(db: *c.KrlDb, params: []const u8, out: []u8) []const u8 {
     const title = extractStr(params, "title") orelse return err(out, "title required");
     const body      = extractStr(params, "body");
     const gear_name = extractStr(params, "gear");
@@ -37,64 +37,64 @@ fn handleAdd(db: *c.IcrDb, params: []const u8, out: []u8) []const u8 {
     const gear_p  = if (gear_name) |s| toZ(s, &gear_z) else null;
 
     var task_id: [64]u8 = undefined;
-    const rc = c.icr_kanban_add(db, title_p, body_p, gear_p,
+    const rc = c.krl_kanban_add(db, title_p, body_p, gear_p,
                                  @intCast(priority), &task_id, task_id.len);
     if (rc != 0) return err(out, "db insert failed");
     const id_len = std.mem.indexOfScalar(u8, &task_id, 0) orelse task_id.len;
     return fmt(out, "{{\"task_id\":\"{s}\",\"status\":\"triage\"}}", .{task_id[0..id_len]});
 }
 
-fn handleList(db: *c.IcrDb, params: []const u8, out: []u8) []const u8 {
+fn handleList(db: *c.KrlDb, params: []const u8, out: []u8) []const u8 {
     const status = extractStr(params, "status");
     const limit  = extractNum(params, "limit") orelse 50;
 
     var status_z: [32:0]u8 = undefined;
     const status_p = if (status) |s| toZ(s, &status_z) else null;
-    const rc = c.icr_kanban_list(db, status_p, @intCast(limit), out.ptr, out.len);
+    const rc = c.krl_kanban_list(db, status_p, @intCast(limit), out.ptr, out.len);
     if (rc != 0) return "[]";
     const end = std.mem.indexOfScalar(u8, out, 0) orelse out.len;
     return out[0..end];
 }
 
-fn handleGet(db: *c.IcrDb, params: []const u8, out: []u8) []const u8 {
+fn handleGet(db: *c.KrlDb, params: []const u8, out: []u8) []const u8 {
     const task_id = extractStr(params, "task_id") orelse
         extractStr(params, "id") orelse return err(out, "task_id required");
     var id_z: [64:0]u8 = undefined;
-    _ = c.icr_kanban_get(db, toZ(task_id, &id_z), out.ptr, out.len);
+    _ = c.krl_kanban_get(db, toZ(task_id, &id_z), out.ptr, out.len);
     const end = std.mem.indexOfScalar(u8, out, 0) orelse out.len;
     return out[0..end];
 }
 
-fn handleMove(db: *c.IcrDb, params: []const u8, out: []u8) []const u8 {
+fn handleMove(db: *c.KrlDb, params: []const u8, out: []u8) []const u8 {
     const task_id  = extractStr(params, "task_id") orelse
         extractStr(params, "id") orelse return err(out, "task_id required");
     const new_status = extractStr(params, "status") orelse return err(out, "status required");
     var id_z:  [64:0]u8  = undefined;
     var st_z:  [32:0]u8  = undefined;
-    _ = c.icr_kanban_move(db, toZ(task_id, &id_z), toZ(new_status, &st_z), out.ptr, out.len);
+    _ = c.krl_kanban_move(db, toZ(task_id, &id_z), toZ(new_status, &st_z), out.ptr, out.len);
     const end = std.mem.indexOfScalar(u8, out, 0) orelse out.len;
     return out[0..end];
 }
 
-fn handleLink(db: *c.IcrDb, params: []const u8, out: []u8) []const u8 {
+fn handleLink(db: *c.KrlDb, params: []const u8, out: []u8) []const u8 {
     const parent = extractStr(params, "parent_id") orelse return err(out, "parent_id required");
     const child  = extractStr(params, "child_id")  orelse return err(out, "child_id required");
     var p_z: [64:0]u8 = undefined;
     var c_z: [64:0]u8 = undefined;
-    const rc = c.icr_kanban_link(db, toZ(parent, &p_z), toZ(child, &c_z));
+    const rc = c.krl_kanban_link(db, toZ(parent, &p_z), toZ(child, &c_z));
     if (rc != 0) return err(out, "link failed");
     return "{\"linked\":true}";
 }
 
 // on_task_complete hook: move any kanban card tracking this task queue entry to done/failed.
-// Full wiring (icr_kanban_move per matching row) happens in Phase 4 when the executor
+// Full wiring (krl_kanban_move per matching row) happens in Phase 4 when the executor
 // sets gear_run_id on cards it creates.
 fn onTaskComplete(payload: []const u8) void {
     const task_id  = extractNum(payload, "task_id")  orelse return;
     const exit_code = extractNum(payload, "exit_code") orelse 0;
     _ = task_id;
     _ = exit_code;
-    // Phase 4: query kanban_tasks WHERE gear_run_id=task_id, call icr_kanban_move.
+    // Phase 4: query kanban_tasks WHERE gear_run_id=task_id, call krl_kanban_move.
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

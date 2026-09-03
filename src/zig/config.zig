@@ -2,14 +2,14 @@ const std = @import("std");
 
 pub const Config = struct {
     // [indexer]
-    indexer_plugin:     []const u8 = "icarium-indexer-codebert",
+    indexer_plugin:     []const u8 = "krul-indexer-codebert",
     indexer_models_dir: []const u8 = "",
 
     // [db]
-    db_conninfo: []const u8 = "dbname=icarium host=localhost",
+    db_conninfo: []const u8 = "dbname=krul host=localhost",
 
     // [daemon]
-    daemon_socket:    []const u8 = "/tmp/icarium.sock",
+    daemon_socket:    []const u8 = "/tmp/krul.sock",
     daemon_log_level: []const u8 = "info",
 
     // [llm]
@@ -18,7 +18,7 @@ pub const Config = struct {
     llm_api_key_env: []const u8 = "",
 };
 
-/// Load icarium.toml from `path` (relative to cwd).  All string slices in the
+/// Load krul.toml from `path` (relative to cwd).  All string slices in the
 /// returned Config point into `buf`, which the caller must keep alive.
 /// Missing keys use Config defaults.  A missing file silently returns defaults.
 pub fn load(buf: []u8, path: []const u8) !Config {

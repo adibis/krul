@@ -1,6 +1,6 @@
-# Icarium Plugin Contract
+# Krul Plugin Contract
 
-Icarium is a daemon orchestrator. It does not own a knowledge-graph extractor. Instead it defines a contract that any extractor must satisfy. The daemon spawns the extractor, feeds it files, validates its output, and inserts the results into PostgreSQL. The extractor only needs to understand source code and emit structured records.
+Krul is a daemon orchestrator. It does not own a knowledge-graph extractor. Instead it defines a contract that any extractor must satisfy. The daemon spawns the extractor, feeds it files, validates its output, and inserts the results into PostgreSQL. The extractor only needs to understand source code and emit structured records.
 
 ---
 
@@ -127,9 +127,9 @@ Every line on stdout must be a valid JSON object. The schema is at `schema/plugi
 
 The daemon discovers plugins by scanning three directories in order:
 
-1. Paths in the `ICARIUM_PLUGINS` environment variable (colon-separated)
+1. Paths in the `KRUL_PLUGINS` environment variable (colon-separated)
 2. `./plugins/` relative to the working directory
-3. `~/.icarium/plugins/`
+3. `~/.krul/plugins/`
 
 Each plugin lives in its own subdirectory with a `plugin.yaml` manifest:
 
@@ -152,7 +152,7 @@ emits_relations:
 
 The `emits_kinds` and `emits_relations` lists are informational — the daemon does not filter records based on them, but they allow tooling to reason about plugin capabilities without running it.
 
-To activate a specific plugin, set it in `icarium.toml`:
+To activate a specific plugin, set it in `krul.toml`:
 
 ```toml
 [indexer]
@@ -177,7 +177,7 @@ If `plugin` is unset the daemon falls back to whichever plugin appears first in 
 
 ## KB Update Contract (Git Hook)
 
-When source files change the daemon should be notified so it can schedule a re-index. Any tool (git hook, CI pipeline, IDE plugin) can do this by sending a JSON message to the daemon's Unix socket at `/tmp/icarium.sock` (configurable via `ICARIUM_SOCK`).
+When source files change the daemon should be notified so it can schedule a re-index. Any tool (git hook, CI pipeline, IDE plugin) can do this by sending a JSON message to the daemon's Unix socket at `/tmp/krul.sock` (configurable via `KRUL_SOCK`).
 
 The message schema is at `schema/index_contract.json`:
 

@@ -95,7 +95,7 @@ fn dispatch(msg: []const u8) ![]const u8 {
             params_json[pslice.len] = 0;
 
             var db_id: i64 = 0;
-            _ = c.icr_task_insert(db, &kind_z, &params_json, &db_id);
+            _ = c.krl_task_insert(db, &kind_z, &params_json, &db_id);
         }
 
         log.info("task {} submitted: {s}", .{ id, cmd });
@@ -128,7 +128,7 @@ fn dispatch(msg: []const u8) ![]const u8 {
 
     if (matchMethod(msg, "index")) {
         const project = extractString(msg, "project") orelse "default";
-        const cmd_owned = try q.g_ally.dupe(u8, "icarium index");
+        const cmd_owned = try q.g_ally.dupe(u8, "krul index");
         q.mu_lock();
         const id = q.g_next_id;
         q.g_next_id += 1;

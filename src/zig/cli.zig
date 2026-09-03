@@ -2,9 +2,9 @@ const std = @import("std");
 const net = std.Io.net;
 const Dir = std.Io.Dir;
 
-const log = std.log.scoped(.icarium);
+const log = std.log.scoped(.krul);
 
-const sock_path = "/tmp/icarium.sock";
+const sock_path = "/tmp/krul.sock";
 
 pub fn main(init: std.process.Init) !void {
     const ally = init.gpa;
@@ -49,7 +49,7 @@ fn daemon_rpc(io: std.Io, ally: std.mem.Allocator, request: []const u8) ![]u8 {
         std.process.exit(1);
     };
     var stream = unix_addr.connect(io) catch {
-        std.debug.print("error: icariumd is not running. Start it with 'icariumd start'.\n", .{});
+        std.debug.print("error: kruld is not running. Start it with 'kruld start'.\n", .{});
         std.process.exit(1);
     };
     defer stream.close(io);
@@ -68,7 +68,7 @@ fn daemon_rpc(io: std.Io, ally: std.mem.Allocator, request: []const u8) ![]u8 {
 
 fn cmd_query(io: std.Io, ally: std.mem.Allocator, args: []const []const u8) !void {
     if (args.len == 0) {
-        std.debug.print("usage: icarium query <question>\n", .{});
+        std.debug.print("usage: krul query <question>\n", .{});
         std.process.exit(1);
     }
 
