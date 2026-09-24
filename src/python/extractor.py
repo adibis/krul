@@ -32,8 +32,11 @@ PARTITION = {
     'REGISTER': 'register', 'REG_FIELD': 'register',
 }
 
-# Base-class → kind mapping (direct match only; transitivity resolved in pass 2)
+# Base-class → kind mapping (direct match only; transitivity resolved in pass 2).
+# Includes both canonical UVM base classes and Moore.io UVMx framework wrappers
+# (uvmx_*_c) used by enterprise testbenches such as core-v-mcu-uvm.
 UVM_BASE_KIND = {
+    # ── Canonical UVM ────────────────────────────────────────────────────────
     'uvm_test':            'UVM_TEST',
     'uvm_env':             'UVM_ENV',
     'cip_base_env':        'UVM_ENV',
@@ -61,6 +64,32 @@ UVM_BASE_KIND = {
     'uvm_reg':             'REGISTER',
     'uvm_reg_field':       'REG_FIELD',
     'uvm_reg_map':         'REG_MAP',
+    # ── Moore.io UVMx framework (wraps standard UVM) ─────────────────────────
+    'uvmx_env_c':          'UVM_ENV',
+    'uvmx_ss_env_c':       'UVM_ENV',
+    'uvmx_chip_env_c':     'UVM_ENV',
+    'uvmx_agent_env_c':    'UVM_ENV',
+    'uvmx_b_env_c':        'UVM_ENV',
+    'uvmx_test_c':         'UVM_TEST',
+    'uvmx_chip_test_c':    'UVM_TEST',
+    'uvmx_ss_test_c':      'UVM_TEST',
+    'uvmx_b_test_c':       'UVM_TEST',
+    'uvmx_agent_c':        'UVM_AGENT',
+    'uvmx_drv_c':          'UVM_DRIVER',
+    'uvmx_mp_drv_c':       'UVM_DRIVER',
+    'uvmx_mon_c':          'UVM_MONITOR',
+    'uvmx_mp_mon_c':       'UVM_MONITOR',
+    'uvmx_sqr_c':          'UVM_SEQUENCER',
+    'uvmx_agent_sqr_c':    'UVM_SEQUENCER',
+    'uvmx_seq_c':          'UVM_SEQUENCE',
+    'uvmx_agent_seq_c':    'UVM_SEQUENCE',
+    'uvmx_seq_lib_c':      'UVM_SEQUENCE',
+    'uvmx_seq_item_c':     'UVM_SEQ_ITEM',
+    'uvmx_mon_trn_c':      'UVM_SEQ_ITEM',
+    'uvmx_sb_c':           'UVM_SCOREBOARD',
+    'uvmx_reg_block_c':    'REG_BLOCK',
+    'uvmx_reg_c':          'REGISTER',
+    'uvmx_reg_field_c':    'REG_FIELD',
 }
 
 # ── Regex patterns ────────────────────────────────────────────────────────────
@@ -487,7 +516,7 @@ def extract_file(path, class_kind_map):
 # ── Two-pass extraction ───────────────────────────────────────────────────────
 
 def extract_dir(root):
-    sv_files = list(Path(root).rglob('*.sv'))
+    sv_files = list(Path(root).rglob('*.sv')) + list(Path(root).rglob('*.svh'))
     # Pass 1: collect all class→kind mappings
     class_kind_map = {}
     for f in sv_files:
