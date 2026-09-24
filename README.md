@@ -1,12 +1,32 @@
 # krul
 
-A daemon-first orchestration engine for chip design verification (DV). Krul
-receives natural-language or structured commands, routes them to multi-step
-pipeline definitions called **gears**, and manages parallel LLM calls and
-simulation processes to drive DV tasks to completion.
+A daemon-first orchestration engine. Krul receives natural-language or
+structured commands, routes them to multi-step pipeline definitions called
+**gears**, and manages parallel LLM calls and subprocesses to drive tasks to
+completion. Krul has no fixed idea of what domain it's orchestrating — gears,
+plugins, and the entity/relation vocabulary they emit are all supplied by the
+project that configures it, not baked into the daemon.
 
 Krul defines `schema/plugin_schema.json` — the contract that knowledge-graph
-indexer plugins must follow. What consumes that data is outside krul's scope.
+indexer plugins must follow, checked at runtime against whichever **ontology**
+(`ontologies/*.json`) a project's `krul.toml` points at. What consumes that
+data is outside krul's scope.
+
+This repo ships two worked examples end to end — gear, plugin contract, and
+ontology — to prove the mechanism doesn't secretly assume one domain:
+
+- **Chip design verification (DV/UVM)** — the original use case. The
+  `krul-indexer-codebert` plugin, `ontologies/dv-uvm.json`, and gears like
+  `close_coverage` and `debug`.
+- **Stock technical analysis** — `ontologies/stock-ta.json` (RSI, MACD,
+  volume, moving averages → strategy and strike-price signals) and the
+  `analyze_signal` gear. No plugin binary ships for this one; it exists to
+  show the ontology and gear layers hold up for a domain with nothing to do
+  with silicon.
+
+Both are examples. Neither is privileged in krul's own code — swapping
+`ontology_path` in `krul.toml` and pointing `indexer.plugin` at a different
+extractor is the entire adaptation required to point krul at a third domain.
 
 ---
 
@@ -73,7 +93,7 @@ kruld start
 # 5. Verify
 krul status
 
-# 6. Index your SV/UVM project
+# 6. Index your project (DV example shown; see Configuration for other domains)
 krul index --project myproject --root /path/to/testbench
 
 # 7. Query indexed entities
@@ -88,8 +108,13 @@ echo '{"method":"query","type":"entities","kind":"UVM_AGENT"}' | nc -U /tmp/krul
 
 ```toml
 [indexer]
-plugin    = "krul-indexer-codebert"   # extractor plugin on $PATH
-models_dir = ""                           # default: $KRUL_MODELS
+plugin          = "krul-indexer-codebert"   # extractor plugin on $PATH
+models_dir      = ""                        # default: $KRUL_MODELS
+search_dirs     = "rtl,tb,dv,uvm,."         # comma-separated; default is DV's own layout
+file_extensions = ".sv,.v,.svh,.uvm"        # comma-separated; default is DV's own file types
+
+[ontology]
+path = "ontologies/dv-uvm.json"   # kind/relation vocabulary; see ontologies/stock-ta.json for a second example
 
 [db]
 conninfo = "dbname=krul host=localhost"
@@ -255,7 +280,9 @@ Kanban task statuses: `triage → todo → ready → running → blocked → rev
 src/c/
   db.c / db.h          PostgreSQL interface (libpq): entities, tasks,
                        entity store queries, kanban CRUD
-  validate.c / .h      NDJSON record validator for plugin output
+  validate.c / .h      NDJSON record validator for plugin output; checks
+                       records against an ontology loaded at runtime
+                       (krl_ontology_load), not a compiled-in kind list
   infer.c / .h         ONNX Runtime inference (NER model)
   tok.c / .h           BPE tokeniser (matches GraphCodeBERT vocab)
   index.c / .h         Entity extraction pipeline (tok → infer → emit)
@@ -289,8 +316,9 @@ Applied automatically at daemon startup. Manual application:
 `psql krul -f schema/001_init.sql`.
 
 ```
-entities           NER-extracted SV/UVM entities (kind, name, file, line, confidence,
-                   embedding vector(768))
+entities           Plugin-extracted entities (kind, name, file, line, confidence,
+                   embedding vector(768)) — kind vocabulary is ontology-defined,
+                   not fixed by krul; DV/UVM is the shipped example
 relationships      Directed structural edges between entities (kind, from_id, to_id)
 tasks              Daemon task queue (shell / index / triage jobs)
 findings           Structured LLM analysis results
@@ -300,7 +328,12 @@ kanban_task_links  Parent/child dependency edges between cards
 kanban_events      Audit trail (status changes, comments, finding links)
 ```
 
-Entity kinds indexed by the built-in NER model:
+`kind` on both tables is plain TEXT, not a fixed enum — the daemon checks it
+against whichever ontology is configured (see Ontologies below), not against
+anything hardcoded in krul itself.
+
+Entity kinds indexed by the built-in `krul-indexer-codebert` NER model (its
+own DV/UVM example, see `ontologies/dv-uvm.json`):
 `MODULE` `PORT` `PARAMETER` `PACKAGE` `INTERFACE` `COVERGROUP` `ASSERTION`
 `UVM_AGENT` `UVM_DRIVER` `UVM_MONITOR` `UVM_SEQUENCER` `UVM_SCOREBOARD`
 `UVM_ENV` `UVM_TEST` `UVM_SEQUENCE` `CLASS`
@@ -309,8 +342,11 @@ Entity kinds indexed by the built-in NER model:
 
 ## Plugin Contract
 
-Krul publishes `schema/plugin_schema.json` — the NDJSON record format that
-all extractor plugins must emit. Each line is either an entity or a relation:
+Krul publishes `schema/plugin_schema.json` — the NDJSON record shape that all
+extractor plugins must emit — plus an **ontology** file that says which `kind`
+and `partition` values are actually legal for this project. The schema is
+fixed; the ontology isn't. Each line is either an entity or a relation, shown
+here against the DV example ontology:
 
 ```jsonc
 // Entity record
@@ -325,9 +361,50 @@ all extractor plugins must emit. Each line is either an entity or a relation:
  "confidence": 0.90}
 ```
 
-Krul validates every record from every plugin against this schema before
-ingesting it. Any system that consumes the entity/relation tables — whether a
-graph database, a vector store, or an analysis tool — works from this contract.
+A plugin for a different domain emits the identical record shape against a
+different ontology — an `RSI_INDICATOR` entity and an `EMITS_STRIKE_PRICE`
+relation from `ontologies/stock-ta.json` validate through the exact same
+`krl_validate_record()` code path, just loaded with a different ontology
+file. See **Ontologies** below.
+
+Krul validates every record from every plugin against this schema *and* the
+loaded ontology before ingesting it. Any system that consumes the
+entity/relation tables — whether a graph database, a vector store, or an
+analysis tool — works from this contract.
+
+## Ontologies
+
+An ontology is an NDJSON file (`ontologies/*.json`) naming the entity kinds
+(and the partition each belongs to) and relation kinds a plugin is allowed to
+emit for one domain. It's loaded once at daemon/CLI startup
+(`krl_ontology_load()` in `src/c/validate.c`) from the path set by
+`[ontology] path` in `krul.toml`, and every subsequent record validation
+checks against the loaded set — nothing about the kind vocabulary is compiled
+into krul itself.
+
+```jsonc
+{"type":"entity_kind","kind":"UVM_AGENT","partition":"verification"}
+{"type":"relation_kind","kind":"DRIVES"}
+```
+
+Two ontologies ship as examples:
+
+| Ontology | Domain | Paired plugin / gear |
+|---|---|---|
+| `ontologies/dv-uvm.json` | Chip design verification | `krul-indexer-codebert`, `close_coverage`/`debug`/`triage`/`simulate` gears |
+| `ontologies/stock-ta.json` | Stock technical analysis | `analyze_signal` gear (no extractor plugin ships; a real one would read OHLCV bars) |
+
+Adding a third domain means writing a new `ontologies/<name>.json`, a plugin
+that emits records against it (or none, if you're only using gears against
+manually-inserted entities), and pointing `krul.toml` at both — no change to
+krul's own source.
+
+Partitions themselves are ontology-defined too. DV's ontology happens to use
+four (`structural`, `verification`, `coverage`, `register`); stock-ta's uses
+four different ones (`market_data`, `indicator`, `signal`, `execution`).
+Krul enforces that an entity's `partition` matches what its ontology says its
+`kind` belongs to (an "IC-1" check) without knowing or caring what the
+partition names themselves mean.
 
 ---
 
@@ -444,6 +521,7 @@ Stage types: `llm` `process` `parallel_llm` `condition`
 | `triage` | "triage", "failures", "regression triage" | Parse failure logs → cluster → root-cause per cluster → synthesize |
 | `simulate` | "simulate", "run sim", "smoke test" | Build run command → launch subprocess → parse pass/fail |
 | `debug` | "debug", "why is", "investigate" | Gather context → 3 hypotheses → verify each → rank |
+| `analyze_signal` | "analyze signal", "technical analysis" | Decompose indicators → pull data → analyze → assess risk (parallel) → synthesize strategy. Stock-TA example, no DV involved — proves the gear format is domain-agnostic. |
 
 ---
 
@@ -461,6 +539,10 @@ Stage types: `llm` `process` `parallel_llm` `condition`
 | 7 — pgvector embeddings | Semantic entity search via HNSW index | |
 | 8 — TUI | Interactive REPL + live task queue + findings panes | |
 | 9 — Hardening | `kruld doctor`, config validation, structured errors | |
+| 10 — Evaporation-based invalidation | Pheromone-style strength decay + reinforcement on entities/relationships, computed at read time | |
+| 11 — Multi-modal artifact store | Non-text content (images, waveforms, audio) retained and reasoned over as itself, not captioned-and-discarded | |
+| 12 — Multi-model routing | Route gear stages across multiple configured LLMs/models by task, coupled to the entity store rather than a bare load balancer | |
+| 13 — Telemetry-to-retraining loop | Close production signal (test failures, corrections, rewrite requests) into retraining the model doing extraction/reasoning, not just reranking retrieval | |
 
 ### Phase 3 — LLM Pool ✓
 

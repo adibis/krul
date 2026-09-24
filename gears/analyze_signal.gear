@@ -1,0 +1,37 @@
+name: analyze_signal
+version: 1
+
+# Stock technical-analysis gear — proves gears aren't DV-specific. Same
+# stage shape as gears/close_coverage.gear (decompose → execute → analyze →
+# fan-out → synthesize), pointed at a completely different domain: it reads
+# RSI/MACD/volume off a ticker's price series and emits a strategy and
+# strike price instead of a coverage closure plan. See ontologies/stock-ta.json
+# for the entity/relation kinds this domain's plugin would emit.
+
+triggers:
+  - "analyze signal"
+  - "check technical setup"
+  - "run ta scan"
+  - "technical analysis"
+
+stages:
+  - id: decompose
+    type: llm
+    prompt: "You are a technical-analysis expert. Given this ticker and goal, identify which indicators (RSI, MACD, volume, moving averages, support/resistance) are most relevant to check first, and over what timeframe.\n\nTask: {input}\n\nKnown entities:\n{context}"
+  - id: execute
+    type: process
+    prompt: "echo 'Indicator pull plan: {decompose}' && date"
+  - id: analyze
+    type: llm
+    prompt: "Analyze these indicator results and identify which signals are confirming a move and which are contradicting it.\n\nOriginal plan:\n{decompose}\n\nIndicator output:\n{execute}"
+  - id: assess_risk
+    type: parallel_llm
+    prompt: "For each confirming signal, estimate the risk of acting on it now versus waiting for further confirmation.\n\nSignals:\n{analyze}"
+  - id: synthesize
+    type: llm
+    prompt: "Synthesize this technical analysis into a final strategy: direction, target strike price, and position sizing rationale.\n\nPlan:\n{decompose}\n\nRisk assessment:\n{assess_risk}"
+
+termination:
+  condition: synthesize.status == done
+  max_iterations: 3
+  on_max: return_last_synthesize

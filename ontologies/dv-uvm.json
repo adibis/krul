@@ -1,0 +1,90 @@
+# DV/UVM ontology — one example plugin contract for krul, not krul's own
+# vocabulary. krul's core (schema/plugin_schema.json, src/c/validate.c)
+# knows nothing about MODULE, UVM_AGENT, or DRIVES; it only knows how to
+# load and check records against whichever ontology file a project's
+# krul.toml points at. This is the ontology krul-indexer-codebert emits
+# against — chip design verification's structural/verification/coverage/
+# register partitioning of SystemVerilog and UVM.
+#
+# Format: one JSON object per line. entity_kind records pair a kind with
+# the partition it belongs to; relation_kind records name a valid edge
+# kind. Partition is itself ontology-defined — this file happens to use
+# four, another ontology could use none or a dozen.
+{"type":"entity_kind","kind":"MODULE","partition":"structural"}
+{"type":"entity_kind","kind":"INTERFACE","partition":"structural"}
+{"type":"entity_kind","kind":"PORT","partition":"structural"}
+{"type":"entity_kind","kind":"MODPORT","partition":"structural"}
+{"type":"entity_kind","kind":"PARAMETER","partition":"structural"}
+{"type":"entity_kind","kind":"PACKAGE","partition":"structural"}
+{"type":"entity_kind","kind":"CLOCK_DOMAIN","partition":"structural"}
+{"type":"entity_kind","kind":"CLOCKING_BLOCK","partition":"structural"}
+{"type":"entity_kind","kind":"UVM_TEST","partition":"verification"}
+{"type":"entity_kind","kind":"UVM_ENV","partition":"verification"}
+{"type":"entity_kind","kind":"UVM_AGENT","partition":"verification"}
+{"type":"entity_kind","kind":"UVM_DRIVER","partition":"verification"}
+{"type":"entity_kind","kind":"UVM_MONITOR","partition":"verification"}
+{"type":"entity_kind","kind":"UVM_SCOREBOARD","partition":"verification"}
+{"type":"entity_kind","kind":"UVM_SEQUENCER","partition":"verification"}
+{"type":"entity_kind","kind":"UVM_SEQUENCE","partition":"verification"}
+{"type":"entity_kind","kind":"UVM_SEQ_ITEM","partition":"verification"}
+{"type":"entity_kind","kind":"CONSTRAINT_BLOCK","partition":"verification"}
+{"type":"entity_kind","kind":"RAND_VAR","partition":"verification"}
+{"type":"entity_kind","kind":"CONFIG_DB_ENTRY","partition":"verification"}
+{"type":"entity_kind","kind":"FACTORY_OVERRIDE","partition":"verification"}
+{"type":"entity_kind","kind":"UVM_EVENT","partition":"verification"}
+{"type":"entity_kind","kind":"COVERGROUP","partition":"coverage"}
+{"type":"entity_kind","kind":"COVERPOINT","partition":"coverage"}
+{"type":"entity_kind","kind":"ASSERTION","partition":"coverage"}
+{"type":"entity_kind","kind":"CHECKER","partition":"coverage"}
+{"type":"entity_kind","kind":"SVA_PROPERTY","partition":"coverage"}
+{"type":"entity_kind","kind":"SVA_SEQUENCE","partition":"coverage"}
+{"type":"entity_kind","kind":"REG_MAP","partition":"register"}
+{"type":"entity_kind","kind":"REG_BLOCK","partition":"register"}
+{"type":"entity_kind","kind":"REGISTER","partition":"register"}
+{"type":"entity_kind","kind":"REG_FIELD","partition":"register"}
+{"type":"relation_kind","kind":"INSTANTIATES"}
+{"type":"relation_kind","kind":"HAS_PORT"}
+{"type":"relation_kind","kind":"HAS_MODPORT"}
+{"type":"relation_kind","kind":"HAS_PARAMETER"}
+{"type":"relation_kind","kind":"USES_PACKAGE"}
+{"type":"relation_kind","kind":"HAS_CLOCKING_BLOCK"}
+{"type":"relation_kind","kind":"DECLARED_IN"}
+{"type":"relation_kind","kind":"IN_CLOCK_DOMAIN"}
+{"type":"relation_kind","kind":"BRIDGES_FROM_DOMAIN"}
+{"type":"relation_kind","kind":"BRIDGES_TO_DOMAIN"}
+{"type":"relation_kind","kind":"CONTAINS"}
+{"type":"relation_kind","kind":"INSTANTIATES_ENV"}
+{"type":"relation_kind","kind":"PULLS_FROM"}
+{"type":"relation_kind","kind":"PUBLISHES_TO"}
+{"type":"relation_kind","kind":"HAS_VIRTUAL_IF"}
+{"type":"relation_kind","kind":"HAS_CONSTRAINT"}
+{"type":"relation_kind","kind":"HAS_RAND_VAR"}
+{"type":"relation_kind","kind":"DECLARES_OVERRIDE"}
+{"type":"relation_kind","kind":"SETS_CONFIG"}
+{"type":"relation_kind","kind":"GETS_CONFIG"}
+{"type":"relation_kind","kind":"GENERATES"}
+{"type":"relation_kind","kind":"RUNS_ON"}
+{"type":"relation_kind","kind":"EXTENDS"}
+{"type":"relation_kind","kind":"PART_OF"}
+{"type":"relation_kind","kind":"CROSSES_WITH"}
+{"type":"relation_kind","kind":"DRIVES"}
+{"type":"relation_kind","kind":"MONITORS"}
+{"type":"relation_kind","kind":"CALLS_BFM"}
+{"type":"relation_kind","kind":"TESTS"}
+{"type":"relation_kind","kind":"CHECKS"}
+{"type":"relation_kind","kind":"COVERS"}
+{"type":"relation_kind","kind":"REFERENCES"}
+{"type":"relation_kind","kind":"BOUND_TO"}
+{"type":"relation_kind","kind":"STIMULATES"}
+{"type":"relation_kind","kind":"ABSTRACTS"}
+{"type":"relation_kind","kind":"MAPS_TO"}
+{"type":"relation_kind","kind":"REFERENCES_PROPERTY"}
+{"type":"relation_kind","kind":"REFERENCES_SEQUENCE"}
+{"type":"relation_kind","kind":"MAPS_REGISTER"}
+{"type":"relation_kind","kind":"SAMPLES"}
+{"type":"relation_kind","kind":"INSTANTIATES_CG"}
+{"type":"relation_kind","kind":"OVERRIDES_CONSTRAINT"}
+{"type":"relation_kind","kind":"DISABLES_CONSTRAINT"}
+{"type":"relation_kind","kind":"RANDOMIZES"}
+{"type":"relation_kind","kind":"STARTS"}
+{"type":"relation_kind","kind":"GETS_RESPONSE"}

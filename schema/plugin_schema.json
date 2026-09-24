@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12",
   "$id": "https://krul.io/schema/plugin.json",
   "title": "Krul Plugin Record",
-  "description": "One newline-delimited JSON line emitted by an Krul indexer plugin. Validated by kruld before DB insertion. See ONTOLOGY.md §7 for full specification.",
+  "description": "One newline-delimited JSON line emitted by a krul indexer plugin. Validated by kruld before DB insertion. kind/partition values are NOT enumerated here — they're checked at runtime against whichever ontology file the project's krul.toml points at (see ontologies/dv-uvm.json for the shipped DV/UVM example, ontologies/stock-ta.json for an unrelated second example). This schema only enforces record shape.",
   "oneOf": [
     { "$ref": "#/$defs/EntityRecord" },
     { "$ref": "#/$defs/RelationRecord" }
@@ -12,53 +12,24 @@
       "type": "string",
       "enum": ["ml_predicted", "static_parsed", "heuristic", "explicit"]
     },
-    "EntityKind": {
-      "type": "string",
-      "enum": [
-        "MODULE", "INTERFACE", "PORT", "MODPORT", "PARAMETER",
-        "PACKAGE", "CLOCK_DOMAIN", "CLOCKING_BLOCK",
-        "UVM_TEST", "UVM_ENV", "UVM_AGENT", "UVM_DRIVER",
-        "UVM_MONITOR", "UVM_SCOREBOARD", "UVM_SEQUENCER",
-        "UVM_SEQUENCE", "UVM_SEQ_ITEM",
-        "CONSTRAINT_BLOCK", "RAND_VAR", "CONFIG_DB_ENTRY", "FACTORY_OVERRIDE",
-        "COVERGROUP", "COVERPOINT", "ASSERTION", "CHECKER",
-        "SVA_PROPERTY", "SVA_SEQUENCE",
-        "REG_MAP", "REG_BLOCK", "REGISTER", "REG_FIELD"
-      ]
-    },
-    "RelationKind": {
-      "type": "string",
-      "enum": [
-        "INSTANTIATES", "HAS_PORT", "HAS_MODPORT", "HAS_PARAMETER",
-        "USES_PACKAGE", "HAS_CLOCKING_BLOCK", "DECLARED_IN", "IN_CLOCK_DOMAIN",
-        "BRIDGES_FROM_DOMAIN", "BRIDGES_TO_DOMAIN",
-        "CONTAINS", "INSTANTIATES_ENV", "PULLS_FROM", "PUBLISHES_TO",
-        "HAS_VIRTUAL_IF", "HAS_CONSTRAINT", "HAS_RAND_VAR",
-        "DECLARES_OVERRIDE", "SETS_CONFIG", "GETS_CONFIG",
-        "GENERATES", "RUNS_ON", "EXTENDS",
-        "PART_OF", "CROSSES_WITH",
-        "DRIVES", "MONITORS", "CALLS_BFM", "TESTS", "CHECKS", "COVERS",
-        "REFERENCES", "BOUND_TO", "STIMULATES", "ABSTRACTS", "MAPS_TO",
-        "REFERENCES_PROPERTY", "REFERENCES_SEQUENCE", "MAPS_REGISTER",
-        "SAMPLES", "INSTANTIATES_CG",
-        "OVERRIDES_CONSTRAINT", "DISABLES_CONSTRAINT", "RANDOMIZES",
-        "STARTS", "GETS_RESPONSE"
-      ]
-    },
     "EntityRecord": {
       "type": "object",
       "title": "Entity Record",
-      "description": "Declares one entity to be inserted into the Krul knowledge graph.",
+      "description": "Declares one entity to be inserted into the project's knowledge graph.",
       "required": ["type", "partition", "kind", "name", "file", "line_start", "confidence"],
       "additionalProperties": false,
       "properties": {
         "type":       { "const": "entity" },
         "partition": {
           "type": "string",
-          "enum": ["structural", "verification", "coverage", "register"],
-          "description": "Logical partition. Must match the kind field — see partition/kind table below."
+          "minLength": 1,
+          "description": "Ontology-defined grouping label for kind. Must match the kind field per the loaded ontology's kind→partition mapping, enforced by the daemon at insert time, not by this schema."
         },
-        "kind":       { "$ref": "#/$defs/EntityKind" },
+        "kind":       {
+          "type": "string",
+          "minLength": 1,
+          "description": "Entity kind, checked against the loaded ontology's entity_kind list."
+        },
         "name":       { "type": "string", "minLength": 1 },
         "file":       {
           "type": "string",
@@ -77,41 +48,8 @@
         },
         "properties": {
           "type": "object",
-          "description": "Kind-specific optional properties. See ONTOLOGY.md §4 per-kind property tables.",
-          "additionalProperties": true,
-          "properties": {
-            "portDirection":    { "type": "string", "enum": ["input", "output", "inout", "ref"] },
-            "widthBits":        { "type": "integer", "minimum": 1 },
-            "isClock":          { "type": "boolean" },
-            "isReset":          { "type": "boolean" },
-            "isActive":         { "type": "string", "enum": ["active", "passive"] },
-            "className":        { "type": "string" },
-            "reqType":          { "type": "string" },
-            "rspType":          { "type": "string" },
-            "protocol":         { "type": "string" },
-            "hasModport":       { "type": "boolean" },
-            "abstractionLevel": { "type": "string", "enum": ["RTL", "BFM", "TLM"] },
-            "portCount":        { "type": "integer", "minimum": 0 },
-            "nCoverpoints":     { "type": "integer", "minimum": 0 },
-            "assertionType":    { "type": "string", "enum": ["assert", "assume", "cover", "restrict"] },
-            "accessPolicy":     { "type": "string", "enum": ["RW", "RO", "WO", "W1C", "RC", "RS", "WRC", "WRS", "W1S", "W1T", "NOACCESS"] },
-            "lsb":              { "type": "integer", "minimum": 0 },
-            "msb":              { "type": "integer", "minimum": 0 },
-            "resetValue":       { "type": "string" },
-            "samplingMechanism": { "type": "string", "enum": ["clocking_event", "explicit_call", "embedded"] },
-            "declaringClass":    { "type": "string" },
-            "isBoundCg":         { "type": "boolean" },
-            "isInline":          { "type": "boolean" },
-            "constraintMode":    { "type": "string", "enum": ["hard", "soft"] }
-          }
-        }
-      },
-      "if":   { "properties": { "kind": { "const": "PORT" } } },
-      "then": {
-        "properties": {
-          "properties": {
-            "required": ["portDirection"]
-          }
+          "description": "Kind-specific optional properties. Names and meanings are defined by the plugin/ontology pair, not by krul's core contract.",
+          "additionalProperties": true
         }
       }
     },
@@ -123,10 +61,14 @@
       "additionalProperties": false,
       "properties": {
         "type":      { "const": "relation" },
-        "kind":      { "$ref": "#/$defs/RelationKind" },
-        "from_kind": { "$ref": "#/$defs/EntityKind" },
+        "kind":      {
+          "type": "string",
+          "minLength": 1,
+          "description": "Relation kind, checked against the loaded ontology's relation_kind list."
+        },
+        "from_kind": { "type": "string", "minLength": 1 },
         "from_name": { "type": "string", "minLength": 1 },
-        "to_kind":   { "$ref": "#/$defs/EntityKind" },
+        "to_kind":   { "type": "string", "minLength": 1 },
         "to_name":   { "type": "string", "minLength": 1 },
         "confidence": {
           "type": "number", "minimum": 0.0, "maximum": 1.0
@@ -138,21 +80,9 @@
         "properties": {
           "type": "object",
           "additionalProperties": true,
-          "description": "Relationship-specific properties. E.g. viaModport for DRIVES/MONITORS, paramBindings for INSTANTIATES, bindTarget for BOUND_TO.",
-          "properties": {
-            "viaModport":    { "type": "string" },
-            "paramBindings": { "type": "object" },
-            "bindTarget":    { "type": "string" }
-          }
+          "description": "Relationship-specific properties. Names and meanings are defined by the plugin/ontology pair, not by krul's core contract."
         }
       }
     }
-  },
-  "x-partition-kind-map": {
-    "description": "Cross-field constraint enforced by daemon (not expressible in JSON Schema). See ONTOLOGY.md §7.3.",
-    "structural":   ["MODULE","INTERFACE","PORT","MODPORT","PARAMETER","PACKAGE","CLOCK_DOMAIN","CLOCKING_BLOCK"],
-    "verification": ["UVM_TEST","UVM_ENV","UVM_AGENT","UVM_DRIVER","UVM_MONITOR","UVM_SCOREBOARD","UVM_SEQUENCER","UVM_SEQUENCE","UVM_SEQ_ITEM","CONSTRAINT_BLOCK","RAND_VAR","CONFIG_DB_ENTRY","FACTORY_OVERRIDE"],
-    "coverage":     ["COVERGROUP","COVERPOINT","ASSERTION","CHECKER","SVA_PROPERTY","SVA_SEQUENCE"],
-    "register":     ["REG_MAP","REG_BLOCK","REGISTER","REG_FIELD"]
   }
 }

@@ -14,7 +14,7 @@ The daemon forks the plugin executable and communicates over stdio.
 | `stdout` | plugin → daemon | Newline-delimited JSON records (NDJSON); one entity or relation per line |
 | `stderr` | plugin → daemon | Diagnostics only — forwarded to daemon stderr, never parsed |
 
-The daemon discovers source files (`*.sv`, `*.v`, `*.svh`, `*.uvm`) under standard subdirectories (`rtl/`, `tb/`, `dv/`, `uvm/`, `.`) of the project root, deletes any previously-indexed entities for those files, then spawns the plugin and streams the paths. The plugin may emit records for any of the files it receives, in any order. Lines beginning with `#` are silently ignored (use them for progress comments if needed).
+The daemon discovers source files under configured subdirectories of the project root, matching configured extensions — both set by `[indexer] search_dirs` / `file_extensions` in `krul.toml` (default: `rtl/`, `tb/`, `dv/`, `uvm/`, `.` and `*.sv`, `*.v`, `*.svh`, `*.uvm`, matching the shipped DV/UVM example; a project indexing a different domain sets both to match its own layout). It then deletes any previously-indexed entities for those files, spawns the plugin, and streams the paths. The plugin may emit records for any of the files it receives, in any order. Lines beginning with `#` are silently ignored (use them for progress comments if needed).
 
 When the plugin exits the daemon reaps it. A non-zero exit code produces a warning log but does not fail the index run — records already ingested are kept.
 
@@ -49,8 +49,8 @@ Every line on stdout must be a valid JSON object. The schema is at `schema/plugi
 | Field | Type | Notes |
 |-------|------|-------|
 | `type` | string | Must be `"entity"` |
-| `partition` | string | Must match the kind — see table below |
-| `kind` | string | One of the 32 recognised entity kinds |
+| `partition` | string | Must match the kind, per the loaded ontology's kind→partition mapping — see Ontology below |
+| `kind` | string | One of the entity kinds defined by the project's loaded ontology |
 | `name` | string | Non-empty |
 | `file` | string | **Absolute path** — must start with `/` |
 | `line_start` | integer | ≥ 1 |
@@ -84,10 +84,10 @@ Every line on stdout must be a valid JSON object. The schema is at `schema/plugi
 | Field | Type | Notes |
 |-------|------|-------|
 | `type` | string | Must be `"relation"` |
-| `kind` | string | One of the 46 recognised relation kinds |
-| `from_kind` | string | Must be a recognised entity kind |
+| `kind` | string | One of the relation kinds defined by the project's loaded ontology |
+| `from_kind` | string | Must be a known entity kind in the loaded ontology |
 | `from_name` | string | Non-empty |
-| `to_kind` | string | Must be a recognised entity kind |
+| `to_kind` | string | Must be a known entity kind in the loaded ontology |
 | `to_name` | string | Non-empty |
 | `confidence` | number | In [0.0, 1.0] |
 
@@ -100,26 +100,38 @@ Every line on stdout must be a valid JSON object. The schema is at `schema/plugi
 
 ---
 
-## Partition / Kind Table
+## Ontology: where kind and partition actually come from
 
-`partition` is not inferred — it must be specified correctly or the record is rejected (validation rule IC-1).
+Neither the entity-kind list, the relation-kind list, nor the partition
+names are fixed by krul or by this contract document. They're defined by an
+**ontology** file — NDJSON, one `entity_kind` or `relation_kind` record per
+line — loaded once at startup from the path set by `[ontology] path` in
+`krul.toml`, and enforced by `krl_validate_record()` for every line a plugin
+emits after that. `partition` is not inferred from `kind` — the record is
+rejected (validation rule IC-1) if the two don't match what the loaded
+ontology says.
 
-| Partition | Entity Kinds |
-|-----------|-------------|
-| `structural` | `MODULE`, `INTERFACE`, `PORT`, `MODPORT`, `PARAMETER`, `PACKAGE`, `CLOCK_DOMAIN`, `CLOCKING_BLOCK` |
-| `verification` | `UVM_TEST`, `UVM_ENV`, `UVM_AGENT`, `UVM_DRIVER`, `UVM_MONITOR`, `UVM_SCOREBOARD`, `UVM_SEQUENCER`, `UVM_SEQUENCE`, `UVM_SEQ_ITEM`, `CONSTRAINT_BLOCK`, `RAND_VAR`, `CONFIG_DB_ENTRY`, `FACTORY_OVERRIDE` |
-| `coverage` | `COVERGROUP`, `COVERPOINT`, `ASSERTION`, `CHECKER`, `SVA_PROPERTY`, `SVA_SEQUENCE` |
-| `register` | `REG_MAP`, `REG_BLOCK`, `REGISTER`, `REG_FIELD` |
+```jsonc
+{"type":"entity_kind","kind":"UVM_AGENT","partition":"verification"}
+{"type":"relation_kind","kind":"DRIVES"}
+```
 
----
+Two ontologies ship as examples, in `ontologies/`:
 
-## Entity Kinds (complete list)
+- **`dv-uvm.json`** — chip design verification. 32 entity kinds across four
+  partitions (`structural`, `verification`, `coverage`, `register`) and 46
+  relation kinds. This is what `krul-indexer-codebert` and the built-in DV
+  gears (`close_coverage`, `debug`, `triage`, `simulate`) emit against.
+- **`stock-ta.json`** — stock technical analysis, unrelated to chip design.
+  15 entity kinds across four different partitions (`market_data`,
+  `indicator`, `signal`, `execution`) and 17 relation kinds, including
+  `EMITS_STRIKE_PRICE` and `EMITS_STRATEGY`. Paired with the `analyze_signal`
+  gear.
 
-`MODULE` `INTERFACE` `PORT` `MODPORT` `PARAMETER` `PACKAGE` `CLOCK_DOMAIN` `CLOCKING_BLOCK` `UVM_TEST` `UVM_ENV` `UVM_AGENT` `UVM_DRIVER` `UVM_MONITOR` `UVM_SCOREBOARD` `UVM_SEQUENCER` `UVM_SEQUENCE` `UVM_SEQ_ITEM` `CONSTRAINT_BLOCK` `RAND_VAR` `CONFIG_DB_ENTRY` `FACTORY_OVERRIDE` `COVERGROUP` `COVERPOINT` `ASSERTION` `CHECKER` `SVA_PROPERTY` `SVA_SEQUENCE` `REG_MAP` `REG_BLOCK` `REGISTER` `REG_FIELD`
-
-## Relation Kinds (complete list)
-
-`INSTANTIATES` `HAS_PORT` `HAS_MODPORT` `HAS_PARAMETER` `USES_PACKAGE` `HAS_CLOCKING_BLOCK` `DECLARED_IN` `IN_CLOCK_DOMAIN` `BRIDGES_FROM_DOMAIN` `BRIDGES_TO_DOMAIN` `CONTAINS` `INSTANTIATES_ENV` `PULLS_FROM` `PUBLISHES_TO` `HAS_VIRTUAL_IF` `HAS_CONSTRAINT` `HAS_RAND_VAR` `DECLARES_OVERRIDE` `SETS_CONFIG` `GETS_CONFIG` `GENERATES` `RUNS_ON` `EXTENDS` `PART_OF` `CROSSES_WITH` `DRIVES` `MONITORS` `CALLS_BFM` `TESTS` `CHECKS` `COVERS` `REFERENCES` `BOUND_TO` `STIMULATES` `ABSTRACTS` `MAPS_TO` `REFERENCES_PROPERTY` `REFERENCES_SEQUENCE` `MAPS_REGISTER` `SAMPLES` `INSTANTIATES_CG` `OVERRIDES_CONSTRAINT` `DISABLES_CONSTRAINT` `RANDOMIZES` `STARTS` `GETS_RESPONSE`
+Read either file directly for its exact, current kind/relation/partition
+list rather than trusting a copy of it in prose — this document intentionally
+doesn't duplicate either list, so the two can never drift out of sync with
+what the daemon actually enforces.
 
 ---
 
@@ -171,7 +183,7 @@ If `plugin` is unset the daemon falls back to whichever plugin appears first in 
 - **Stale cleanup** — handled automatically; the plugin only emits what it found.
 - **IPC / socket communication** — the plugin is a simple subprocess, not a server.
 - **Confidence thresholding** — emit the confidence value you have; the daemon logs a warning for values below 0.5 but still ingests the record.
-- **Ontology versioning** — the daemon enforces the schema; the plugin just needs to conform to it.
+- **Ontology loading or validation logic** — the daemon loads the configured ontology once and enforces it against every record; the plugin just needs to emit kinds that exist in whichever ontology the project has configured.
 
 ---
 

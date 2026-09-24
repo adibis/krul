@@ -24,8 +24,12 @@ pub const Stats = struct {
     errors:    u32 = 0,
 };
 
-const SV_EXTS      = [_][]const u8{ ".sv", ".v", ".svh", ".uvm" };
-const DEFAULT_DIRS = [_][]const u8{ "rtl", "tb", "dv", "uvm", "." };
+// Defaults match the shipped DV/UVM example (see Config.indexer_search_dirs
+// and Config.indexer_file_extensions in config.zig) — a project indexing
+// a different domain overrides both in krul.toml rather than editing this
+// file, the same way it swaps in its own ontology_path.
+pub const DEFAULT_EXTS = [_][]const u8{ ".sv", ".v", ".svh", ".uvm" };
+pub const DEFAULT_DIRS = [_][]const u8{ "rtl", "tb", "dv", "uvm", "." };
 
 pub fn run(
     ally:        std.mem.Allocator,
@@ -34,18 +38,22 @@ pub fn run(
     plugin_path: []const u8,
     models_dir:  []const u8,
     root:        []const u8,
+    ontology:    *const c.KrlOntology,
+    search_dirs: []const []const u8,
+    extensions:  []const []const u8,
 ) !Stats {
-    // ── Collect SV/V/SVH/UVM files ──────────────────────────────────────────
+    // ── Collect files under the configured search dirs matching the
+    //    configured extensions (DV/UVM by default; see Config) ─────────────
     var files: std.ArrayListUnmanaged([]u8) = .empty;
     defer {
         for (files.items) |f| ally.free(f);
         files.deinit(ally);
     }
 
-    for (DEFAULT_DIRS) |sub| {
+    for (search_dirs) |sub| {
         const dir_path = std.fmt.allocPrint(ally, "{s}/{s}", .{ root, sub }) catch continue;
         defer ally.free(dir_path);
-        collectSvFiles(ally, dir_path, &files) catch {};
+        collectSvFiles(ally, dir_path, extensions, &files) catch {};
     }
 
     if (files.items.len == 0) {
@@ -146,7 +154,7 @@ pub fn run(
                 if (line_len > 0) {
                     line_no += 1;
                     line_buf[line_len] = 0;
-                    processLine(&stats, db, project_id, line_buf[0..line_len], line_no);
+                    processLine(&stats, db, project_id, ontology, line_buf[0..line_len], line_no);
                 }
                 line_len = 0;
             } else if (line_len < line_buf.len - 1) {
@@ -159,7 +167,7 @@ pub fn run(
     if (line_len > 0) {
         line_no += 1;
         line_buf[line_len] = 0;
-        processLine(&stats, db, project_id, line_buf[0..line_len], line_no);
+        processLine(&stats, db, project_id, ontology, line_buf[0..line_len], line_no);
     }
 
     _ = std.c.close(read_fd);
@@ -179,11 +187,11 @@ pub fn run(
 }
 
 fn processLine(stats: *Stats, db: *c.KrlDb, project_id: i64,
-               line: []u8, line_no: i32) void {
+               ontology: *const c.KrlOntology, line: []u8, line_no: i32) void {
     if (line[0] == '#') return; // comment line from plugin
 
     var verr: c.KrlValidateError = std.mem.zeroes(c.KrlValidateError);
-    if (c.krl_validate_record(line.ptr, line_no, &verr) != 0) {
+    if (c.krl_validate_record(ontology, line.ptr, line_no, &verr) != 0) {
         log.warn("line {d} invalid: {s}", .{ line_no, std.mem.sliceTo(&verr.message, 0) });
         stats.errors += 1;
         return;
@@ -203,6 +211,7 @@ fn processLine(stats: *Stats, db: *c.KrlDb, project_id: i64,
 // ── Directory walker ─────────────────────────────────────────────────────────
 
 fn collectSvFiles(ally: std.mem.Allocator, dir_path: []const u8,
+                  extensions: []const []const u8,
                   out: *std.ArrayListUnmanaged([]u8)) !void {
     var dir_z: [4096:0]u8 = undefined;
     const dlen = @min(dir_path.len, dir_z.len - 1);
@@ -220,16 +229,16 @@ fn collectSvFiles(ally: std.mem.Allocator, dir_path: []const u8,
         if (dt == std.c.DT.DIR) {
             const full = try std.fmt.allocPrint(ally, "{s}/{s}", .{ dir_path, name });
             defer ally.free(full);
-            collectSvFiles(ally, full, out) catch {};
-        } else if (dt == std.c.DT.REG and isSvFile(name)) {
+            collectSvFiles(ally, full, extensions, out) catch {};
+        } else if (dt == std.c.DT.REG and matchesExtension(name, extensions)) {
             const full = try std.fmt.allocPrint(ally, "{s}/{s}", .{ dir_path, name });
             try out.append(ally, full);
         }
     }
 }
 
-fn isSvFile(name: []const u8) bool {
-    for (SV_EXTS) |ext| {
+fn matchesExtension(name: []const u8, extensions: []const []const u8) bool {
+    for (extensions) |ext| {
         if (std.mem.endsWith(u8, name, ext)) return true;
     }
     return false;

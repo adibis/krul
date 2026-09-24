@@ -2,8 +2,20 @@ const std = @import("std");
 
 pub const Config = struct {
     // [indexer]
-    indexer_plugin:     []const u8 = "krul-indexer-codebert",
-    indexer_models_dir: []const u8 = "",
+    indexer_plugin:         []const u8 = "krul-indexer-codebert",
+    indexer_models_dir:     []const u8 = "",
+    // Comma-separated. Defaults match the shipped DV/UVM plugin; a project
+    // indexing a different domain overrides both to match its own file
+    // layout rather than editing runner code.
+    indexer_search_dirs:    []const u8 = "rtl,tb,dv,uvm,.",
+    indexer_file_extensions: []const u8 = ".sv,.v,.svh,.uvm",
+
+    // [ontology] — which kind/relation vocabulary indexed records are
+    // checked against. DV/UVM is the shipped default so a fresh checkout
+    // indexes chip-design projects with zero config, but any project can
+    // point this at its own ontology file (see ontologies/stock-ta.json
+    // for a second, unrelated example).
+    ontology_path: []const u8 = "ontologies/dv-uvm.json",
 
     // [db]
     db_conninfo: []const u8 = "dbname=krul host=localhost",
@@ -54,6 +66,10 @@ pub fn load(buf: []u8, path: []const u8) !Config {
         if (std.mem.eql(u8, section, "indexer")) {
             if (std.mem.eql(u8, key, "plugin"))     cfg.indexer_plugin     = val;
             if (std.mem.eql(u8, key, "models_dir")) cfg.indexer_models_dir = val;
+            if (std.mem.eql(u8, key, "search_dirs"))     cfg.indexer_search_dirs     = val;
+            if (std.mem.eql(u8, key, "file_extensions")) cfg.indexer_file_extensions = val;
+        } else if (std.mem.eql(u8, section, "ontology")) {
+            if (std.mem.eql(u8, key, "path"))       cfg.ontology_path      = val;
         } else if (std.mem.eql(u8, section, "db")) {
             if (std.mem.eql(u8, key, "conninfo"))   cfg.db_conninfo        = val;
         } else if (std.mem.eql(u8, section, "daemon")) {

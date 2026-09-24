@@ -13,6 +13,15 @@ pub const default_config =
     \\# NDJSON entity/relation records to stdout (see plugin_schema.json).
     \\plugin = "krul-indexer-codebert"
     \\models_dir = ""   # default: KRUL_MODELS env, then plugin's own default
+    \\# search_dirs and file_extensions default to the DV/UVM layout below;
+    \\# override both for a different domain's plugin.
+    \\# search_dirs = "rtl,tb,dv,uvm,."
+    \\# file_extensions = ".sv,.v,.svh,.uvm"
+    \\
+    \\[ontology]
+    \\# Entity/relation kind vocabulary, checked at record-validation time.
+    \\# ontologies/stock-ta.json is a second, unrelated example.
+    \\path = "ontologies/dv-uvm.json"
     \\
     \\[db]
     \\conninfo = "dbname=krul host=localhost"

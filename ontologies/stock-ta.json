@@ -1,0 +1,36 @@
+# Stock technical-analysis ontology — a second example plugin contract,
+# unrelated to chip design, to prove krul's ontology mechanism isn't
+# secretly DV-shaped. A plugin for this domain would read OHLCV bars and
+# emit records against these kinds instead of MODULE/UVM_AGENT/DRIVES.
+{"type":"entity_kind","kind":"TICKER","partition":"market_data"}
+{"type":"entity_kind","kind":"PRICE_BAR","partition":"market_data"}
+{"type":"entity_kind","kind":"VOLUME_SERIES","partition":"market_data"}
+{"type":"entity_kind","kind":"RSI_INDICATOR","partition":"indicator"}
+{"type":"entity_kind","kind":"MACD_INDICATOR","partition":"indicator"}
+{"type":"entity_kind","kind":"MOVING_AVERAGE","partition":"indicator"}
+{"type":"entity_kind","kind":"BOLLINGER_BAND","partition":"indicator"}
+{"type":"entity_kind","kind":"SUPPORT_LEVEL","partition":"indicator"}
+{"type":"entity_kind","kind":"RESISTANCE_LEVEL","partition":"indicator"}
+{"type":"entity_kind","kind":"STRATEGY","partition":"signal"}
+{"type":"entity_kind","kind":"TRADE_SIGNAL","partition":"signal"}
+{"type":"entity_kind","kind":"STRIKE_PRICE","partition":"signal"}
+{"type":"entity_kind","kind":"OPTION_CONTRACT","partition":"execution"}
+{"type":"entity_kind","kind":"POSITION","partition":"execution"}
+{"type":"entity_kind","kind":"ORDER","partition":"execution"}
+{"type":"relation_kind","kind":"HAS_RSI"}
+{"type":"relation_kind","kind":"HAS_MACD"}
+{"type":"relation_kind","kind":"HAS_VOLUME"}
+{"type":"relation_kind","kind":"HAS_MOVING_AVERAGE"}
+{"type":"relation_kind","kind":"HAS_BOLLINGER_BAND"}
+{"type":"relation_kind","kind":"CROSSES_ABOVE"}
+{"type":"relation_kind","kind":"CROSSES_BELOW"}
+{"type":"relation_kind","kind":"TRACKS"}
+{"type":"relation_kind","kind":"DERIVED_FROM"}
+{"type":"relation_kind","kind":"CONFIRMS"}
+{"type":"relation_kind","kind":"CONTRADICTS"}
+{"type":"relation_kind","kind":"EMITS_STRIKE_PRICE"}
+{"type":"relation_kind","kind":"EMITS_STRATEGY"}
+{"type":"relation_kind","kind":"EMITS_SIGNAL"}
+{"type":"relation_kind","kind":"TRIGGERS_ORDER"}
+{"type":"relation_kind","kind":"OPENS_POSITION"}
+{"type":"relation_kind","kind":"CLOSES_POSITION"}

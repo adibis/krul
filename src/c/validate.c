@@ -28,80 +28,81 @@ static const char *json_str(const char *src, const char *key, size_t *out_len)
 }
 
 /* ---------------------------------------------------------------------------
- * Partition ↔ kind consistency table (ONTOLOGY.md §7.3)
+ * Ontology loading — one NDJSON record per line, read once at startup.
  * --------------------------------------------------------------------------- */
-typedef struct { const char *kind; const char *partition; } KindEntry;
-
-static const KindEntry kind_table[] = {
-    { "MODULE",            "structural"   },
-    { "INTERFACE",         "structural"   },
-    { "PORT",              "structural"   },
-    { "MODPORT",           "structural"   },
-    { "PARAMETER",         "structural"   },
-    { "PACKAGE",           "structural"   },
-    { "CLOCK_DOMAIN",      "structural"   },
-    { "CLOCKING_BLOCK",    "structural"   },
-    { "UVM_TEST",          "verification" },
-    { "UVM_ENV",           "verification" },
-    { "UVM_AGENT",         "verification" },
-    { "UVM_DRIVER",        "verification" },
-    { "UVM_MONITOR",       "verification" },
-    { "UVM_SCOREBOARD",    "verification" },
-    { "UVM_SEQUENCER",     "verification" },
-    { "UVM_SEQUENCE",      "verification" },
-    { "UVM_SEQ_ITEM",      "verification" },
-    { "CONSTRAINT_BLOCK",  "verification" },
-    { "RAND_VAR",          "verification" },
-    { "CONFIG_DB_ENTRY",   "verification" },
-    { "FACTORY_OVERRIDE",  "verification" },
-    { "UVM_EVENT",         "verification" },
-    { "COVERGROUP",        "coverage"     },
-    { "COVERPOINT",        "coverage"     },
-    { "ASSERTION",         "coverage"     },
-    { "CHECKER",           "coverage"     },
-    { "SVA_PROPERTY",      "coverage"     },
-    { "SVA_SEQUENCE",      "coverage"     },
-    { "REG_MAP",           "register"     },
-    { "REG_BLOCK",         "register"     },
-    { "REGISTER",          "register"     },
-    { "REG_FIELD",         "register"     },
-    { NULL, NULL }
-};
-
-static const char *expected_partition(const char *kind, size_t klen)
+int krl_ontology_load(const char *path, KrlOntology *out)
 {
-    for (const KindEntry *e = kind_table; e->kind; e++) {
+    if (!path || !out) return -1;
+    memset(out, 0, sizeof *out);
+
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+
+    char line[1024];
+    while (fgets(line, sizeof line, f)) {
+        /* Strip trailing newline. */
+        size_t len = strlen(line);
+        while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) {
+            line[--len] = '\0';
+        }
+        if (len == 0 || line[0] == '#') continue;
+
+        size_t type_len = 0;
+        const char *type_val = json_str(line, "type", &type_len);
+        if (!type_val) continue;
+
+        if (type_len == 11 && memcmp(type_val, "entity_kind", 11) == 0) {
+            if (out->n_kinds >= KRL_ONTOLOGY_MAX_KINDS) {
+                fclose(f);
+                return -1;
+            }
+            size_t kind_len = 0, part_len = 0;
+            const char *kind_val = json_str(line, "kind", &kind_len);
+            const char *part_val = json_str(line, "partition", &part_len);
+            if (!kind_val || !part_val) {
+                fclose(f);
+                return -1;
+            }
+            KrlOntologyKind *k = &out->kinds[out->n_kinds++];
+            snprintf(k->kind, sizeof k->kind, "%.*s", (int)kind_len, kind_val);
+            snprintf(k->partition, sizeof k->partition, "%.*s", (int)part_len, part_val);
+        } else if (type_len == 13 && memcmp(type_val, "relation_kind", 13) == 0) {
+            if (out->n_relations >= KRL_ONTOLOGY_MAX_RELATIONS) {
+                fclose(f);
+                return -1;
+            }
+            size_t kind_len = 0;
+            const char *kind_val = json_str(line, "kind", &kind_len);
+            if (!kind_val) {
+                fclose(f);
+                return -1;
+            }
+            snprintf(out->relations[out->n_relations++], 64, "%.*s",
+                     (int)kind_len, kind_val);
+        }
+        /* Unknown "type" values are ignored, so an ontology file can grow
+         * new record types later without breaking older krul builds. */
+    }
+
+    fclose(f);
+    return 0;
+}
+
+static const char *expected_partition(const KrlOntology *ont, const char *kind, size_t klen)
+{
+    for (size_t i = 0; i < ont->n_kinds; i++) {
+        const KrlOntologyKind *e = &ont->kinds[i];
         if (strlen(e->kind) == klen && memcmp(e->kind, kind, klen) == 0)
             return e->partition;
     }
     return NULL;
 }
 
-/* ---------------------------------------------------------------------------
- * Valid relation kinds (ONTOLOGY.md §7.2)
- * --------------------------------------------------------------------------- */
-static const char *relation_kinds[] = {
-    "INSTANTIATES", "HAS_PORT", "HAS_MODPORT", "HAS_PARAMETER",
-    "USES_PACKAGE", "HAS_CLOCKING_BLOCK", "DECLARED_IN", "IN_CLOCK_DOMAIN",
-    "BRIDGES_FROM_DOMAIN", "BRIDGES_TO_DOMAIN",
-    "CONTAINS", "INSTANTIATES_ENV", "PULLS_FROM", "PUBLISHES_TO",
-    "HAS_VIRTUAL_IF", "HAS_CONSTRAINT", "HAS_RAND_VAR",
-    "DECLARES_OVERRIDE", "SETS_CONFIG", "GETS_CONFIG",
-    "GENERATES", "RUNS_ON", "EXTENDS",
-    "PART_OF", "CROSSES_WITH",
-    "DRIVES", "MONITORS", "CALLS_BFM", "TESTS", "CHECKS", "COVERS",
-    "REFERENCES", "BOUND_TO", "STIMULATES", "ABSTRACTS", "MAPS_TO",
-    "REFERENCES_PROPERTY", "REFERENCES_SEQUENCE", "MAPS_REGISTER",
-    "SAMPLES", "INSTANTIATES_CG",
-    "OVERRIDES_CONSTRAINT", "DISABLES_CONSTRAINT", "RANDOMIZES",
-    "STARTS", "GETS_RESPONSE",
-    NULL
-};
-
-static int is_valid_relation_kind(const char *kind, size_t klen)
+static int is_valid_relation_kind(const KrlOntology *ont, const char *kind, size_t klen)
 {
-    for (const char **rk = relation_kinds; *rk; rk++) {
-        if (strlen(*rk) == klen && memcmp(*rk, kind, klen) == 0) return 1;
+    for (size_t i = 0; i < ont->n_relations; i++) {
+        const char *rk = ont->relations[i];
+        if (strlen(rk) == klen && memcmp(rk, kind, klen) == 0) return 1;
     }
     return 0;
 }
@@ -109,7 +110,7 @@ static int is_valid_relation_kind(const char *kind, size_t klen)
 /* ---------------------------------------------------------------------------
  * Error helper
  * --------------------------------------------------------------------------- */
-static int fail(KrlValidateError *err, IcrRecordType rtype, int line_no,
+static int fail(KrlValidateError *err, KrlRecordType rtype, int line_no,
                 const char *fmt, ...)
 {
     if (!err) return -1;
@@ -125,7 +126,8 @@ static int fail(KrlValidateError *err, IcrRecordType rtype, int line_no,
 /* ---------------------------------------------------------------------------
  * Public API: validate one record
  * --------------------------------------------------------------------------- */
-int krl_validate_record(const char *line, int line_no, KrlValidateError *err)
+int krl_validate_record(const KrlOntology *ont, const char *line, int line_no,
+                        KrlValidateError *err)
 {
     if (!line || line[0] == '\0') {
         return fail(err, 0, line_no, "empty line");
@@ -150,7 +152,7 @@ int krl_validate_record(const char *line, int line_no, KrlValidateError *err)
                     (int)type_len, type_val);
     }
 
-    IcrRecordType rtype = is_entity ? KRL_RECORD_ENTITY : KRL_RECORD_RELATION;
+    KrlRecordType rtype = is_entity ? KRL_RECORD_ENTITY : KRL_RECORD_RELATION;
 
     /* --- Entity record validation ---------------------------------------- */
     if (is_entity) {
@@ -186,7 +188,7 @@ int krl_validate_record(const char *line, int line_no, KrlValidateError *err)
         const char *kind_val = json_str(line, "kind",      &kind_len);
 
         /* kind enum check */
-        const char *expected = expected_partition(kind_val, kind_len);
+        const char *expected = expected_partition(ont, kind_val, kind_len);
         if (!expected) {
             return fail(err, rtype, line_no,
                         "unknown entity kind \"%.*s\"",
@@ -236,7 +238,7 @@ int krl_validate_record(const char *line, int line_no, KrlValidateError *err)
     /* Relation kind enum check */
     size_t rk_len = 0;
     const char *rk_val = json_str(line, "kind", &rk_len);
-    if (!is_valid_relation_kind(rk_val, rk_len)) {
+    if (!is_valid_relation_kind(ont, rk_val, rk_len)) {
         return fail(err, rtype, line_no,
                     "unknown relation kind \"%.*s\"",
                     (int)rk_len, rk_val);
@@ -246,11 +248,11 @@ int krl_validate_record(const char *line, int line_no, KrlValidateError *err)
     size_t fk_len = 0, tk_len = 0;
     const char *fk_val = json_str(line, "from_kind", &fk_len);
     const char *tk_val = json_str(line, "to_kind",   &tk_len);
-    if (!expected_partition(fk_val, fk_len)) {
+    if (!expected_partition(ont, fk_val, fk_len)) {
         return fail(err, rtype, line_no,
                     "unknown from_kind \"%.*s\"", (int)fk_len, fk_val);
     }
-    if (!expected_partition(tk_val, tk_len)) {
+    if (!expected_partition(ont, tk_val, tk_len)) {
         return fail(err, rtype, line_no,
                     "unknown to_kind \"%.*s\"", (int)tk_len, tk_val);
     }
@@ -261,8 +263,8 @@ int krl_validate_record(const char *line, int line_no, KrlValidateError *err)
 /* ---------------------------------------------------------------------------
  * Public API: validate a complete plugin stdout buffer
  * --------------------------------------------------------------------------- */
-int krl_validate_stream(const char *buf, size_t len,
-                        IcrValidateCb cb, void *userdata)
+int krl_validate_stream(const KrlOntology *ont, const char *buf, size_t len,
+                        KrlValidateCb cb, void *userdata)
 {
     int failures = 0;
     int line_no  = 0;
@@ -284,7 +286,7 @@ int krl_validate_stream(const char *buf, size_t len,
             /* Skip blank lines and comment lines silently */
             if (tmp[0] != '\0' && tmp[0] != '#') {
                 KrlValidateError err = {0};
-                if (krl_validate_record(tmp, line_no, &err) != 0) {
+                if (krl_validate_record(ont, tmp, line_no, &err) != 0) {
                     failures++;
                     if (cb) cb(&err, userdata);
                 }
