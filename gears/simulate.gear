@@ -15,7 +15,7 @@ stages:
     prompt: "Convert this simulation request into a shell command for VCS, Questa, or Xcelium. Output ONLY the shell command, no explanation.\n\nRequest: {input}"
   - id: execute
     type: process
-    prompt: "echo 'Would run: {decompose}' && echo 'Simulation queued. Use icariumd start to execute against your simulator.'"
+    prompt: "echo 'Would run: {decompose}' && echo 'Simulation queued. Use kruld start to execute against your simulator.'"
   - id: analyze
     type: llm
     prompt: "Analyze this simulation result. Did it pass or fail? What are the key outcomes?\n\nCommand:\n{decompose}\n\nOutput:\n{execute}"

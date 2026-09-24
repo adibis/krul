@@ -9,7 +9,7 @@ models/vocab.bin
 models/merges.bin
 
 # Local config (may contain secrets)
-icarium.toml
+krul.toml
 
 # PostgreSQL temp files
 *.pid

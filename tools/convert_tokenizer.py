@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Convert a HuggingFace tokenizer.json (RoBERTa BPE) into the binary format
-expected by icarium's C tokenizer (tok.c).
+expected by krul's C tokenizer (tok.c).
 
 Produces:
   vocab.bin   — vocabulary entries with token strings
@@ -111,7 +111,7 @@ def main():
     build_vocab_bin(vocab, out_dir / "vocab.bin")
     build_merges_bin(merges, vocab, out_dir / "merges.bin")
 
-    print("\nDone. Copy vocab.bin and merges.bin to your icarium models/ directory.")
+    print("\nDone. Copy vocab.bin and merges.bin to your krul models/ directory.")
 
 
 if __name__ == "__main__":

@@ -1,25 +1,25 @@
 #!/bin/sh
-# icarium post-commit hook
-# Notifies icariumd that source files changed so the knowledge base stays current.
+# krul post-commit hook
+# Notifies kruld that source files changed so the knowledge base stays current.
 #
 # Install (run from your project root):
-#   cp /path/to/icarium/hooks/post-commit .git/hooks/post-commit
+#   cp /path/to/krul/hooks/post-commit .git/hooks/post-commit
 #   chmod +x .git/hooks/post-commit
 #
 # Config:
-#   ICARIUM_SOCK   Unix socket path (default: /tmp/icarium.sock)
-#   ICARIUM_PROJECT  Project name (default: git root directory name)
+#   KRUL_SOCK     Unix socket path (default: /tmp/krul.sock)
+#   KRUL_PROJECT  Project name (default: git root directory name)
 #
-# Message contract: schema/index_contract.json in the icarium repo.
+# Message contract: schema/index_contract.json in the krul repo.
 
 set -e
 
-SOCK="${ICARIUM_SOCK:-/tmp/icarium.sock}"
+SOCK="${KRUL_SOCK:-/tmp/krul.sock}"
 
 # Silently skip if the daemon is not running
 [ -S "$SOCK" ] || exit 0
 
-PROJECT="${ICARIUM_PROJECT:-$(git rev-parse --show-toplevel | xargs basename)}"
+PROJECT="${KRUL_PROJECT:-$(git rev-parse --show-toplevel | xargs basename)}"
 
 # Collect source files changed in this commit
 # On the very first commit HEAD~1 doesn't exist; fall back to listing all files.
