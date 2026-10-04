@@ -76,6 +76,16 @@ int krl_ingest_record(KrlDb *db, int64_t project_id, const char *line);
 int krl_exec_shell(const char *cmd, char *stdout_out, size_t out_size,
                    int *exit_code_out);
 
+/* Runs path with argv[1..argc-1] directly via fork/exec, no shell involved --
+ * argv entries reach the child exactly as given, so a gate script's inputs
+ * can never be reinterpreted as shell syntax regardless of their content.
+ * argv must be NULL-terminated per execv() convention; argv[0] is
+ * conventionally path itself.
+ * Writes WEXITSTATUS into *exit_code_out (or -1 if the child didn't exit
+ * normally). Returns 0 if the child was launched and reaped, -1 if
+ * fork/exec/wait itself failed. */
+int krl_exec_argv(const char *path, char *const argv[], int *exit_code_out);
+
 /* Project lookup -------------------------------------------------------------
  * Returns project id (>0) if a project with the given name exists, else -1. */
 int64_t krl_project_lookup(KrlDb *db, const char *name);

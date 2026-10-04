@@ -141,4 +141,24 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run C smoke tests");
     test_step.dependOn(&run_test.step);
+
+    // ── test-gear — gear executor unit tests (hooks/gate, no onnxruntime) ──
+    const gear_test_mod = b.createModule(.{
+        .root_source_file = b.path("src/zig/executor.zig"),
+        .target   = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    gear_test_mod.addIncludePath(.{ .cwd_relative = pq_inc });
+    gear_test_mod.addIncludePath(.{ .cwd_relative = "src/c" });
+    gear_test_mod.addLibraryPath(.{ .cwd_relative = pq_lib });
+    gear_test_mod.linkSystemLibrary("pq", .{});
+    gear_test_mod.linkLibrary(core_lib);
+
+    const gear_test = b.addTest(.{ .root_module = gear_test_mod });
+    const run_gear_test = b.addRunArtifact(gear_test);
+    run_gear_test.setCwd(b.path(".")); // so tests/fixtures/*.sh resolve
+
+    const gear_test_step = b.step("test-gear", "Run gear executor + gate unit tests");
+    gear_test_step.dependOn(&run_gear_test.step);
 }

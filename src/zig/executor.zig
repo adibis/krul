@@ -4,10 +4,11 @@
 // Template tokens: {input} = user query, {context} = entity-store context,
 // {stage_id} = prior stage output. \n in prompt strings is unescaped to newline.
 
-const std  = @import("std");
-const gear = @import("gear.zig");
-const llm  = @import("llm.zig");
-const c    = @import("c.zig").lib;
+const std   = @import("std");
+const gear  = @import("gear.zig");
+const llm   = @import("llm.zig");
+const hooks = @import("hooks.zig");
+const c     = @import("c.zig").lib;
 
 const log = std.log.scoped(.executor);
 
@@ -39,7 +40,7 @@ pub fn run(
         log.info("gear '{s}' iteration {d}/{d}", .{ g.name, iteration + 1, g.max_iterations });
 
         for (g.stages) |stage| {
-            const out = runStage(ally, &stage, input, context, &outputs) catch |err| blk: {
+            const out = runStage(ally, g.name, &stage, input, context, &outputs) catch |err| blk: {
                 log.warn("stage '{s}' error: {}", .{ stage.id, err });
                 break :blk StageOutput{
                     .content = try ally.dupe(u8, ""),
@@ -75,11 +76,12 @@ pub fn run(
 }
 
 fn runStage(
-    ally:    std.mem.Allocator,
-    stage:   *const gear.Stage,
-    input:   []const u8,
-    context: []const u8,
-    outputs: *std.StringHashMapUnmanaged(StageOutput),
+    ally:      std.mem.Allocator,
+    gear_name: []const u8,
+    stage:     *const gear.Stage,
+    input:     []const u8,
+    context:   []const u8,
+    outputs:   *std.StringHashMapUnmanaged(StageOutput),
 ) !StageOutput {
     switch (stage.kind) {
         .llm, .parallel_llm => {
@@ -105,6 +107,11 @@ fn runStage(
         .process => {
             const cmd = try fillTemplate(ally, stage.prompt, input, context, outputs);
             defer ally.free(cmd);
+
+            if (hooks.gateProcess(ally, gear_name, stage.id, cmd) == .deny) {
+                log.warn("stage '{s}' [process] denied by gate", .{stage.id});
+                return .{ .content = try ally.dupe(u8, "denied by gate"), .failed = true };
+            }
 
             const snip = cmd[0..@min(cmd.len, 80)];
             log.info("stage '{s}' [process] cmd={s}", .{ stage.id, snip });
@@ -188,4 +195,66 @@ fn checkTermination(
         return !out.failed;
     }
     return true;
+}
+
+const canary_path = "/tmp/krul_gate_test_canary";
+
+test "process stage runs normally when no gate script is configured" {
+    hooks.init("");
+    const ally = std.testing.allocator;
+    var outputs: std.StringHashMapUnmanaged(StageOutput) = .empty;
+    defer outputs.deinit(ally);
+
+    const stage = gear.Stage{ .id = "s", .kind = .process, .prompt = "echo hi" };
+    const out = try runStage(ally, "g", &stage, "", "", &outputs);
+    defer ally.free(out.content);
+
+    try std.testing.expect(!out.failed);
+    try std.testing.expect(std.mem.indexOf(u8, out.content, "hi") != null);
+}
+
+test "process stage is denied by gate script, and the command never actually runs" {
+    _ = std.c.unlink(canary_path);
+    hooks.init("tests/fixtures/gate_deny.sh");
+    defer hooks.init("");
+
+    const ally = std.testing.allocator;
+    var outputs: std.StringHashMapUnmanaged(StageOutput) = .empty;
+    defer outputs.deinit(ally);
+
+    const stage = gear.Stage{
+        .id = "s", .kind = .process,
+        .prompt = "touch " ++ canary_path,
+    };
+    const out = try runStage(ally, "g", &stage, "", "", &outputs);
+    defer ally.free(out.content);
+
+    try std.testing.expect(out.failed);
+    try std.testing.expectEqualStrings("denied by gate", out.content);
+    // Not just checking the reported status -- proves the shell command
+    // itself never executed, not merely that the stage was labeled failed.
+    try std.testing.expect(std.c.fopen(canary_path, "r") == null);
+}
+
+test "process stage runs when gate script allows it" {
+    _ = std.c.unlink(canary_path);
+    hooks.init("tests/fixtures/gate_allow.sh");
+    defer hooks.init("");
+
+    const ally = std.testing.allocator;
+    var outputs: std.StringHashMapUnmanaged(StageOutput) = .empty;
+    defer outputs.deinit(ally);
+
+    const stage = gear.Stage{
+        .id = "s", .kind = .process,
+        .prompt = "touch " ++ canary_path,
+    };
+    const out = try runStage(ally, "g", &stage, "", "", &outputs);
+    defer ally.free(out.content);
+
+    try std.testing.expect(!out.failed);
+    const f = std.c.fopen(canary_path, "r");
+    try std.testing.expect(f != null);
+    if (f) |fp| _ = std.c.fclose(fp);
+    _ = std.c.unlink(canary_path);
 }

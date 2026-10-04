@@ -28,6 +28,13 @@ pub const Config = struct {
     llm_endpoint:    []const u8 = "",
     llm_model:       []const u8 = "",
     llm_api_key_env: []const u8 = "",
+
+    // [gates] — external policy script consulted before every `process`-type
+    // gear stage runs. Krul's core has no opinion on what's safe to run; the
+    // script is the entire policy, supplied by whoever configures krul for
+    // this repo, same as gears and ontologies are project data, not core
+    // logic. Empty path disables gating (every stage runs unconditionally).
+    gate_process_script: []const u8 = "",
 };
 
 /// Load krul.toml from `path` (relative to cwd).  All string slices in the
@@ -79,6 +86,8 @@ pub fn load(buf: []u8, path: []const u8) !Config {
             if (std.mem.eql(u8, key, "endpoint"))    cfg.llm_endpoint    = val;
             if (std.mem.eql(u8, key, "model"))        cfg.llm_model       = val;
             if (std.mem.eql(u8, key, "api_key_env")) cfg.llm_api_key_env = val;
+        } else if (std.mem.eql(u8, section, "gates")) {
+            if (std.mem.eql(u8, key, "process_script")) cfg.gate_process_script = val;
         }
     }
 

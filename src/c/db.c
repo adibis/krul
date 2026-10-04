@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <unistd.h>
 
 struct KrlDb {
     PGconn *conn;
@@ -390,6 +391,25 @@ int krl_exec_shell(const char *cmd, char *stdout_out, size_t out_size,
     size_t n = fread(stdout_out, 1, out_size - 1, fp);
     stdout_out[n] = '\0';
     int status = pclose(fp);
+    *exit_code_out = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    return 0;
+}
+
+int krl_exec_argv(const char *path, char *const argv[], int *exit_code_out) {
+    pid_t pid = fork();
+    if (pid < 0) {
+        *exit_code_out = -1;
+        return -1;
+    }
+    if (pid == 0) {
+        execv(path, argv);
+        _exit(127);  /* only reached if execv itself failed */
+    }
+    int status;
+    if (waitpid(pid, &status, 0) < 0) {
+        *exit_code_out = -1;
+        return -1;
+    }
     *exit_code_out = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
     return 0;
 }

@@ -5,6 +5,7 @@ const c = @import("c.zig").lib;
 const q = @import("queue.zig");
 const ipc = @import("ipc.zig");
 const llm = @import("llm.zig");
+const hooks = @import("hooks.zig");
 const config = @import("config.zig");
 const gear_registry   = @import("gear_registry.zig");
 const plugin_registry = @import("plugin_registry.zig");
@@ -44,6 +45,7 @@ pub fn cmd_start(io: std.Io) !void {
     var cfg_buf: [4096]u8 = undefined;
     const cfg = config.load(&cfg_buf, "krul.toml") catch config.Config{};
     llm.init(io, cfg.llm_endpoint, cfg.llm_model, cfg.llm_api_key_env);
+    hooks.init(cfg.gate_process_script);
 
     gear_registry.loadAll(q.g_ally) catch |e|
         log.warn("gear loading failed: {}", .{e});
