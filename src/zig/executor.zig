@@ -27,8 +27,16 @@ pub fn run(
 ) ![]u8 {
     var outputs: std.StringHashMapUnmanaged(StageOutput) = .empty;
     defer {
-        var it = outputs.valueIterator();
-        while (it.next()) |v| ally.free(v.content);
+        // Frees both the value's content AND the key -- the key string
+        // stored here is always a heap dupe (see the `ally.dupe` call
+        // below), never a literal, so deinit() alone leaks every key:
+        // StringHashMapUnmanaged has no idea the keys it holds are
+        // owned, it only owns its own bucket storage.
+        var it = outputs.iterator();
+        while (it.next()) |entry| {
+            ally.free(entry.key_ptr.*);
+            ally.free(entry.value_ptr.content);
+        }
         outputs.deinit(ally);
     }
 
@@ -224,7 +232,7 @@ test "process stage is denied by gate script, and the command never actually run
 
     const stage = gear.Stage{
         .id = "s", .kind = .process,
-        .prompt = "touch " ++ canary_path,
+        .prompt = "echo x > " ++ canary_path,
     };
     const out = try runStage(ally, "g", &stage, "", "", &outputs);
     defer ally.free(out.content);
@@ -247,7 +255,7 @@ test "process stage runs when gate script allows it" {
 
     const stage = gear.Stage{
         .id = "s", .kind = .process,
-        .prompt = "touch " ++ canary_path,
+        .prompt = "echo x > " ++ canary_path,
     };
     const out = try runStage(ally, "g", &stage, "", "", &outputs);
     defer ally.free(out.content);
