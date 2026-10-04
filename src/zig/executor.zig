@@ -56,6 +56,7 @@ pub fn run(
                 };
             };
 
+            const stage_failed = out.failed;
             if (outputs.getPtr(stage.id)) |existing| {
                 ally.free(existing.content);
                 existing.* = out;
@@ -63,6 +64,14 @@ pub fn run(
                 const key = try ally.dupe(u8, stage.id);
                 try outputs.put(ally, key, out);
             }
+
+            // Notification only -- a stage's own result already decided
+            // whether to proceed; nothing here can reopen that decision.
+            var stage_hp: [128]u8 = undefined;
+            const shp = std.fmt.bufPrint(&stage_hp,
+                "{{\"gear\":\"{s}\",\"stage\":\"{s}\",\"failed\":{}}}",
+                .{ g.name, stage.id, stage_failed }) catch stage_hp[0..0];
+            hooks.fire("on_stage_complete", shp);
         }
 
         // Termination: last stage succeeded and condition is met
@@ -73,6 +82,7 @@ pub fn run(
                 last = try ally.dupe(u8, out.content);
                 if (checkTermination(g.termination_condition, &outputs)) {
                     log.info("gear '{s}' done after iteration {d}", .{ g.name, iteration + 1 });
+                    fireGearComplete(g.name, iteration + 1, "done");
                     return last;
                 }
             }
@@ -80,7 +90,20 @@ pub fn run(
     }
 
     log.warn("gear '{s}' hit max_iterations={d}", .{ g.name, g.max_iterations });
+    fireGearComplete(g.name, g.max_iterations, "max_iterations");
     return last;
+}
+
+/// Notification only, same as on_stage_complete -- a registered handler
+/// (write a finding to memory, bump a pheromone's reinforcement, enqueue
+/// a regression via the existing task queue, notify the user) reacts to
+/// a gear finishing. Nothing here can undo that the gear already ran.
+fn fireGearComplete(gear_name: []const u8, iterations: u32, reason: []const u8) void {
+    var hp: [160]u8 = undefined;
+    const payload = std.fmt.bufPrint(&hp,
+        "{{\"gear\":\"{s}\",\"iterations\":{d},\"reason\":\"{s}\"}}",
+        .{ gear_name, iterations, reason }) catch hp[0..0];
+    hooks.fire("on_gear_complete", payload);
 }
 
 fn runStage(
@@ -265,4 +288,55 @@ test "process stage runs when gate script allows it" {
     try std.testing.expect(f != null);
     if (f) |fp| _ = std.c.fclose(fp);
     _ = std.c.unlink(canary_path);
+}
+
+var test_stage_payload_buf: [160]u8 = undefined;
+var test_stage_payload_len: usize = 0;
+var test_gear_payload_buf: [160]u8 = undefined;
+var test_gear_payload_len: usize = 0;
+
+fn captureStagePayload(payload: []const u8) void {
+    test_stage_payload_len = @min(payload.len, test_stage_payload_buf.len);
+    @memcpy(test_stage_payload_buf[0..test_stage_payload_len], payload[0..test_stage_payload_len]);
+}
+
+fn captureGearPayload(payload: []const u8) void {
+    test_gear_payload_len = @min(payload.len, test_gear_payload_buf.len);
+    @memcpy(test_gear_payload_buf[0..test_gear_payload_len], payload[0..test_gear_payload_len]);
+}
+
+test "on_stage_complete and on_gear_complete fire with the expected payloads" {
+    hooks.init("");
+    hooks.register("on_stage_complete", captureStagePayload);
+    hooks.register("on_gear_complete", captureGearPayload);
+
+    const ally = std.testing.allocator;
+    var arena = std.heap.ArenaAllocator.init(ally);
+    const gear_ally = arena.allocator();
+
+    const stages = try gear_ally.alloc(gear.Stage, 1);
+    stages[0] = .{ .id = "only_stage", .kind = .process, .prompt = "echo done" };
+
+    var g = gear.Gear{
+        .name = "test_gear_for_hooks",
+        .version = 1,
+        .triggers = &.{},
+        .stages = stages,
+        .termination_condition = "only_stage.status == done",
+        .max_iterations = 1,
+        .on_max = "return_last",
+        ._arena = arena,
+    };
+    defer g.deinit();
+
+    const out = try run(ally, &g, "", "");
+    defer ally.free(out);
+
+    const stage_payload = test_stage_payload_buf[0..test_stage_payload_len];
+    try std.testing.expect(std.mem.indexOf(u8, stage_payload, "\"stage\":\"only_stage\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, stage_payload, "\"failed\":false") != null);
+
+    const gear_payload = test_gear_payload_buf[0..test_gear_payload_len];
+    try std.testing.expect(std.mem.indexOf(u8, gear_payload, "\"gear\":\"test_gear_for_hooks\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, gear_payload, "\"reason\":\"done\"") != null);
 }
