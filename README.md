@@ -125,11 +125,21 @@ log_level = "info"
 
 [llm]
 # endpoint = "https://api.anthropic.com/v1"
-# model    = "claude-sonnet-4-6"
+# model    = "claude-sonnet-4-5"
 # api_key_env = "ANTHROPIC_API_KEY"
 # — or any OpenAI-compatible endpoint:
 # endpoint = "http://localhost:11434/v1"
 # model    = "qwen2.5-coder:32b"
+
+[gates]
+# process_script = ""   # empty = no gate, every `process` stage runs unconditionally.
+# Set to an executable path to consult before every process-type gear
+# stage runs. Receives [gear_name, stage_id, cmd] as literal argv entries
+# (no shell involved in that call, so the command text can never be
+# reinterpreted as shell syntax by the check itself); exit 0 allows the
+# stage, any nonzero exit (or a failure to even launch the script) denies
+# it. Krul's core has no opinion on what the script checks -- same as
+# gears and ontologies, that's project-supplied policy, not core logic.
 ```
 
 ---
@@ -298,7 +308,7 @@ src/zig/
   gear_registry.zig    Gear discovery: KRUL_GEARS, ./gears/, ~/.krul/gears/
   executor.zig         Gear stage runner: template fill, LLM calls, process stages
   plugin_registry.zig  Plugin manifest parser + in-process capability dispatch
-  hooks.zig            Fire-and-forget hook registry (64 slots)
+  hooks.zig            Fire-and-forget hook registry (64 slots) + the process-stage gate
   plugins/kanban.zig   Kanban capability plugin (handles kanban.* methods)
   plugin_runner.zig    Extractor plugin subprocess runner
   config.zig           krul.toml parser
@@ -455,16 +465,30 @@ Daemon scans at startup:
 
 ### Hook system
 
-Hooks are fire-and-forget notifications fired on daemon events:
+Two different things share the name "hook" here, deliberately kept apart:
 
-| Hook | Fires when |
-|---|---|
-| `pre_index` | Before plugin_runner starts on a file batch |
-| `post_index` | After plugin_runner completes |
-| `on_task_complete` | A task queue entry reaches `done` or `failed` |
-| `on_finding` | A triage gear writes a finding |
-| `on_gear_stage_complete` | A gear executor stage finishes |
-| `on_gear_complete` | A gear run reaches its termination condition |
+**Notifications** (`hooks.fire()` / `hooks.register()`, `src/zig/hooks.zig`) are
+fire-and-forget. A registered handler reacts to something that already
+happened; nothing it does can undo or retry the event itself.
+
+| Hook | Fires when | Status |
+|---|---|---|
+| `on_task_complete` | A task queue entry reaches `done` or `failed` | ✓ fires today |
+| `on_gear_stage_complete` | A gear executor stage finishes, success or fail | ✓ fires today |
+| `on_gear_complete` | A gear run exits, via its termination condition or `max_iterations` | ✓ fires today |
+| `pre_index` | Before plugin_runner starts on a file batch | planned, not wired yet |
+| `post_index` | After plugin_runner completes | planned, not wired yet |
+| `on_finding` | A triage gear writes a finding | planned, not wired yet |
+
+**The gate** (`hooks.gateProcess()`, same file) is the opposite shape: it runs
+*before* a `process`-type gear stage, and can deny it outright. See
+`[gates]` under Configuration — this is the one hook point that can stop
+something from happening, everything else above only reacts after the
+fact. It exists because krul runs as its own daemon process; a gear's
+`process` stage is a direct subprocess call with no agent harness (Claude
+Code or otherwise) anywhere in that path, so none of that harness's own
+tool-call hooks have any reach into it. Nothing else in krul enforces
+policy on a gear's commands except whatever script is configured here.
 
 ---
 
@@ -555,10 +579,13 @@ Backend auto-detected from endpoint URL; API key resolved from env at init time.
 
 `src/zig/executor.zig` — the stage runner called by `gear.run`. Loops through
 each stage in order; for `llm`/`parallel_llm` stages calls `llm.call()` with the
-template-filled prompt; for `process` stages runs the command via `krl_exec_shell`.
-Template engine substitutes `{input}`, `{context}`, and `{stage_id}` tokens using
-prior stage outputs. Respects `termination.condition` and `max_iterations`. All
-four built-in gear files carry concrete prompt templates.
+template-filled prompt; for `process` stages, checks the `[gates]` policy script
+(if configured) before running the command via `krl_exec_shell`, and fires the
+`on_gear_stage_complete` notification after. Template engine substitutes
+`{input}`, `{context}`, and `{stage_id}` tokens using prior stage outputs.
+Respects `termination.condition` and `max_iterations`; fires `on_gear_complete`
+on either exit path. All five built-in gear files carry concrete prompt
+templates.
 
 ### Phase 5 — Router (next)
 

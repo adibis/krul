@@ -71,7 +71,7 @@ pub fn run(
             const shp = std.fmt.bufPrint(&stage_hp,
                 "{{\"gear\":\"{s}\",\"stage\":\"{s}\",\"failed\":{}}}",
                 .{ g.name, stage.id, stage_failed }) catch stage_hp[0..0];
-            hooks.fire("on_stage_complete", shp);
+            hooks.fire("on_gear_stage_complete", shp);
         }
 
         // Termination: last stage succeeded and condition is met
@@ -94,7 +94,7 @@ pub fn run(
     return last;
 }
 
-/// Notification only, same as on_stage_complete -- a registered handler
+/// Notification only, same as on_gear_stage_complete -- a registered handler
 /// (write a finding to memory, bump a pheromone's reinforcement, enqueue
 /// a regression via the existing task queue, notify the user) reacts to
 /// a gear finishing. Nothing here can undo that the gear already ran.
@@ -305,9 +305,9 @@ fn captureGearPayload(payload: []const u8) void {
     @memcpy(test_gear_payload_buf[0..test_gear_payload_len], payload[0..test_gear_payload_len]);
 }
 
-test "on_stage_complete and on_gear_complete fire with the expected payloads" {
+test "on_gear_stage_complete and on_gear_complete fire with the expected payloads" {
     hooks.init("");
-    hooks.register("on_stage_complete", captureStagePayload);
+    hooks.register("on_gear_stage_complete", captureStagePayload);
     hooks.register("on_gear_complete", captureGearPayload);
 
     const ally = std.testing.allocator;
