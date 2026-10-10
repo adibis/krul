@@ -147,3 +147,35 @@ int krl_kanban_move(KrlDb *db, const char *task_id, const char *new_status,
                     char *out, size_t out_size);
 
 int krl_kanban_link(KrlDb *db, const char *parent_id, const char *child_id);
+
+/* Evaporation-based invalidation (Phase 10) -----------------------------------
+ * Pheromone-style strength decay computed at read time; reinforcement resets
+ * strength to 1.0 rather than incrementing it. See PLAN.md Phase 10.
+ *
+ * krl_evaporation_migrate(): add strength/last_reinforced_at columns to
+ *   entities and relationships if absent (idempotent). Returns 0/-1.
+ *
+ * krl_reinforce_entity() / krl_reinforce_relation(): reset strength to 1.0
+ *   and last_reinforced_at to now() for the given row. This is a blind SET,
+ *   not a read-modify-write, so concurrent reinforcement of the same row
+ *   cannot lose an update the way an increment-based counter could.
+ *   Returns 0 on success, -1 on error (including id not found).
+ *
+ * krl_entity_strength() / krl_relation_strength(): compute the current
+ *   decayed strength for one row, clamped to [strength_min, 1.0] — the
+ *   MAX-MIN Ant System bound, so a long-neglected row never decays to a
+ *   value indistinguishable from zero and unrecoverable without external
+ *   re-indexing. half_life_hours and strength_min are caller-supplied (from
+ *   krul.toml's [decay] section), not hardcoded.
+ *   Returns 0 on success (*out is set), -1 on error (including id not found). */
+int krl_evaporation_migrate(KrlDb *db);
+
+int krl_reinforce_entity(KrlDb *db, int64_t entity_id);
+int krl_reinforce_relation(KrlDb *db, int64_t relation_id);
+
+int krl_entity_strength(KrlDb *db, int64_t entity_id,
+                        double half_life_hours, double strength_min,
+                        double *out);
+int krl_relation_strength(KrlDb *db, int64_t relation_id,
+                          double half_life_hours, double strength_min,
+                          double *out);

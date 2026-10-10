@@ -161,4 +161,32 @@ pub fn build(b: *std.Build) void {
 
     const gear_test_step = b.step("test-gear", "Run gear executor + gate unit tests");
     gear_test_step.dependOn(&run_gear_test.step);
+
+    // ── test-evaporation — Phase 10 DB smoke test (requires KRUL_TEST_DB) ──
+    const evap_test_mod = b.createModule(.{
+        .root_source_file = null,
+        .target   = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    evap_test_mod.addCSourceFiles(.{
+        .files = &.{ "tests/test_evaporation.c" },
+        .flags = &.{ "-std=c11", "-Wall" },
+    });
+    evap_test_mod.addIncludePath(.{ .cwd_relative = pq_inc });
+    evap_test_mod.addIncludePath(.{ .cwd_relative = "src/c" });
+    evap_test_mod.addLibraryPath(.{ .cwd_relative = pq_lib });
+    evap_test_mod.linkSystemLibrary("pq", .{});
+    evap_test_mod.linkLibrary(core_lib);
+
+    const test_evaporation = b.addExecutable(.{
+        .name        = "test_evaporation",
+        .root_module = evap_test_mod,
+    });
+
+    const run_evap_test = b.addRunArtifact(test_evaporation);
+
+    const evap_test_step = b.step("test-evaporation",
+        "Run Phase 10 evaporation DB smoke test (needs a disposable Postgres db, see tests/test_evaporation.c)");
+    evap_test_step.dependOn(&run_evap_test.step);
 }

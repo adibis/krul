@@ -744,3 +744,91 @@ int krl_kanban_link(KrlDb *db, const char *parent_id, const char *child_id) {
     PQclear(res);
     return ok ? 0 : -1;
 }
+
+/* ── Evaporation-based invalidation (Phase 10) ───────────────────────────────── */
+
+int krl_evaporation_migrate(KrlDb *db) {
+    const char *ddl =
+        "ALTER TABLE entities"
+        "  ADD COLUMN IF NOT EXISTS strength FLOAT NOT NULL DEFAULT 1.0,"
+        "  ADD COLUMN IF NOT EXISTS last_reinforced_at TIMESTAMPTZ NOT NULL DEFAULT NOW();"
+
+        "ALTER TABLE relationships"
+        "  ADD COLUMN IF NOT EXISTS strength FLOAT NOT NULL DEFAULT 1.0,"
+        "  ADD COLUMN IF NOT EXISTS last_reinforced_at TIMESTAMPTZ NOT NULL DEFAULT NOW();";
+
+    PGresult *res = PQexec(db->conn, ddl);
+    int ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
+    if (!ok) fprintf(stderr, "krl_evaporation_migrate: %s\n", PQerrorMessage(db->conn));
+    PQclear(res);
+    return ok ? 0 : -1;
+}
+
+static int reinforce_row(KrlDb *db, const char *table, int64_t id) {
+    char sql[160];
+    snprintf(sql, sizeof(sql),
+        "UPDATE %s SET strength = 1.0, last_reinforced_at = NOW() WHERE id = $1",
+        table); /* table is always one of our own two literals, never caller input */
+    char id_str[24];
+    snprintf(id_str, sizeof(id_str), "%lld", (long long)id);
+    const char *params[1] = { id_str };
+    PGresult *res = PQexecParams(db->conn, sql, 1, NULL, params, NULL, NULL, 0);
+    if (PQresultStatus(res) != PGRES_COMMAND_OK) {
+        fprintf(stderr, "reinforce_row(%s): %s\n", table, PQerrorMessage(db->conn));
+        PQclear(res);
+        return -1;
+    }
+    /* PQcmdTuples gives the UPDATE's affected-row count as a string; "0" means
+     * id didn't exist in this table, which the caller should see as an error. */
+    int matched = strcmp(PQcmdTuples(res), "0") != 0;
+    PQclear(res);
+    return matched ? 0 : -1;
+}
+
+int krl_reinforce_entity(KrlDb *db, int64_t entity_id) {
+    return reinforce_row(db, "entities", entity_id);
+}
+
+int krl_reinforce_relation(KrlDb *db, int64_t relation_id) {
+    return reinforce_row(db, "relationships", relation_id);
+}
+
+static int strength_of(KrlDb *db, const char *table, int64_t id,
+                        double half_life_hours, double strength_min,
+                        double *out) {
+    char sql[320];
+    snprintf(sql, sizeof(sql),
+        "SELECT GREATEST($2::double precision, LEAST(1.0, strength *"
+        " power(0.5::double precision,"
+        " extract(epoch from now() - last_reinforced_at)"
+        " / ($3::double precision * 3600))))"
+        " FROM %s WHERE id = $1",
+        table); /* table is always one of our own two literals, never caller input */
+    char id_str[24], min_str[32], hl_str[32];
+    snprintf(id_str,  sizeof(id_str),  "%lld", (long long)id);
+    snprintf(min_str, sizeof(min_str), "%.9f", strength_min);
+    snprintf(hl_str,  sizeof(hl_str),  "%.9f", half_life_hours);
+    const char *params[3] = { id_str, min_str, hl_str };
+    PGresult *res = PQexecParams(db->conn, sql, 3, NULL, params, NULL, NULL, 0);
+    if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) == 0 ||
+        PQgetisnull(res, 0, 0)) {
+        fprintf(stderr, "strength_of(%s): %s\n", table, PQerrorMessage(db->conn));
+        PQclear(res);
+        return -1;
+    }
+    *out = atof(PQgetvalue(res, 0, 0));
+    PQclear(res);
+    return 0;
+}
+
+int krl_entity_strength(KrlDb *db, int64_t entity_id,
+                        double half_life_hours, double strength_min,
+                        double *out) {
+    return strength_of(db, "entities", entity_id, half_life_hours, strength_min, out);
+}
+
+int krl_relation_strength(KrlDb *db, int64_t relation_id,
+                          double half_life_hours, double strength_min,
+                          double *out) {
+    return strength_of(db, "relationships", relation_id, half_life_hours, strength_min, out);
+}
