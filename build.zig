@@ -189,4 +189,17 @@ pub fn build(b: *std.Build) void {
     const evap_test_step = b.step("test-evaporation",
         "Run Phase 10 evaporation DB smoke test (needs a disposable Postgres db, see tests/test_evaporation.c)");
     evap_test_step.dependOn(&run_evap_test.step);
+
+    // ── test-config — config.zig unit tests (pure Zig + libc, no pq/onnx) ──
+    const config_test_mod = b.createModule(.{
+        .root_source_file = b.path("src/zig/config.zig"),
+        .target   = target,
+        .optimize = optimize,
+        .link_libc = true,
+    });
+    const config_test = b.addTest(.{ .root_module = config_test_mod });
+    const run_config_test = b.addRunArtifact(config_test);
+
+    const config_test_step = b.step("test-config", "Run config.zig unit tests");
+    config_test_step.dependOn(&run_config_test.step);
 }

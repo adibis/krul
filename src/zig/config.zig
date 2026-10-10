@@ -35,6 +35,20 @@ pub const Config = struct {
     // this repo, same as gears and ontologies are project data, not core
     // logic. Empty path disables gating (every stage runs unconditionally).
     gate_process_script: []const u8 = "",
+
+    // [decay] — Phase 10 evaporation-based invalidation (see PLAN.md Phase 10).
+    // half_life_hours: time for an unreinforced row's strength to halve.
+    // strength_min: read-time floor (the MAX-MIN Ant System bound) — strength
+    //   can decay down to this value but never below, so a neglected row
+    //   stays reachable by a future reinforcement event instead of decaying
+    //   to something indistinguishable from zero.
+    // visibility_threshold: default query.* results exclude rows whose
+    //   current strength falls below this. Deliberately a separate knob from
+    //   strength_min: collapsing the two into one value would mean either
+    //   nothing is ever excluded, or excluded rows can never recover.
+    decay_half_life_hours:      f64 = 720.0, // 30 days
+    decay_strength_min:         f64 = 0.05,
+    decay_visibility_threshold: f64 = 0.1,
 };
 
 /// Load krul.toml from `path` (relative to cwd).  All string slices in the
@@ -88,6 +102,14 @@ pub fn load(buf: []u8, path: []const u8) !Config {
             if (std.mem.eql(u8, key, "api_key_env")) cfg.llm_api_key_env = val;
         } else if (std.mem.eql(u8, section, "gates")) {
             if (std.mem.eql(u8, key, "process_script")) cfg.gate_process_script = val;
+        } else if (std.mem.eql(u8, section, "decay")) {
+            if (std.mem.eql(u8, key, "half_life_hours")) {
+                cfg.decay_half_life_hours = std.fmt.parseFloat(f64, val) catch cfg.decay_half_life_hours;
+            } else if (std.mem.eql(u8, key, "strength_min")) {
+                cfg.decay_strength_min = std.fmt.parseFloat(f64, val) catch cfg.decay_strength_min;
+            } else if (std.mem.eql(u8, key, "visibility_threshold")) {
+                cfg.decay_visibility_threshold = std.fmt.parseFloat(f64, val) catch cfg.decay_visibility_threshold;
+            }
         }
     }
 
@@ -98,4 +120,55 @@ fn unquote(s: []const u8) []const u8 {
     if (s.len >= 2 and s[0] == '"' and s[s.len - 1] == '"')
         return s[1 .. s.len - 1];
     return s;
+}
+
+// Writes `contents` to `path` via plain libc, mirroring load()'s own
+// fopen-based I/O so these tests don't depend on std.Io's Dir/tmpDir API
+// (which changes shape across zig versions independently of config.zig's
+// own on-disk format).
+fn writeTempConfig(path: [:0]const u8, contents: []const u8) !void {
+    const f = std.c.fopen(path, "w") orelse return error.OpenFailed;
+    defer _ = std.c.fclose(f);
+    const n = std.c.fwrite(contents.ptr, 1, contents.len, f);
+    if (n != contents.len) return error.WriteFailed;
+}
+
+test "decay config defaults when the file or [decay] section is absent" {
+    var buf: [4096]u8 = undefined;
+    const cfg = try load(&buf, "/nonexistent/path/krul.toml");
+    try std.testing.expectEqual(@as(f64, 720.0), cfg.decay_half_life_hours);
+    try std.testing.expectEqual(@as(f64, 0.05), cfg.decay_strength_min);
+    try std.testing.expectEqual(@as(f64, 0.1), cfg.decay_visibility_threshold);
+}
+
+test "decay config parses explicit [decay] values" {
+    const path = "/tmp/krul_config_test_explicit.toml";
+    try writeTempConfig(path,
+        "[decay]\nhalf_life_hours = 48.5\nstrength_min = 0.02\nvisibility_threshold = 0.15\n");
+
+    var buf: [4096]u8 = undefined;
+    const cfg = try load(&buf, path);
+    try std.testing.expectApproxEqAbs(@as(f64, 48.5), cfg.decay_half_life_hours, 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.02), cfg.decay_strength_min, 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.15), cfg.decay_visibility_threshold, 1e-9);
+}
+
+test "decay config keeps its default when a value fails to parse" {
+    const path = "/tmp/krul_config_test_badvalue.toml";
+    try writeTempConfig(path, "[decay]\nhalf_life_hours = not_a_number\n");
+
+    var buf: [4096]u8 = undefined;
+    const cfg = try load(&buf, path);
+    try std.testing.expectEqual(@as(f64, 720.0), cfg.decay_half_life_hours);
+}
+
+test "decay config does not leak values from unrelated sections" {
+    const path = "/tmp/krul_config_test_sections.toml";
+    try writeTempConfig(path,
+        "[daemon]\nsocket = \"/tmp/other.sock\"\n[decay]\nstrength_min = 0.2\n");
+
+    var buf: [4096]u8 = undefined;
+    const cfg = try load(&buf, path);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.2), cfg.decay_strength_min, 1e-9);
+    try std.testing.expectEqual(@as(f64, 720.0), cfg.decay_half_life_hours);
 }
