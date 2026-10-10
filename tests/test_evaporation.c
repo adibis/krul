@@ -197,6 +197,63 @@ int main(void) {
     CHECK(strstr(qbuf, "DRIVES") == NULL,
           "decayed-below-threshold relation is excluded from default query_relations results");
 
+    /* ── get_context: relation-strength and entity-strength are filtered
+     * independently; the focus entity is always included regardless ────── */
+
+    char ctxbuf[65536];
+    rc = krl_gothos_get_context(db, project_id, "evap_entity", 1,
+                                 HALF_LIFE_HOURS, STRENGTH_MIN, VISIBILITY_THRESHOLD,
+                                 ctxbuf, sizeof(ctxbuf));
+    CHECK(rc == 0, "get_context succeeds with a decayed connecting relation");
+    CHECK(strstr(ctxbuf, "DRIVES") == NULL,
+          "get_context's relations list excludes the still-decayed DRIVES relation");
+    CHECK(strstr(ctxbuf, "\"evap_entity_2\"") != NULL,
+          "get_context's entities list still includes a neighbor whose own strength is fresh");
+
+    backdate(raw, "entities", eid2, HALF_LIFE_HOURS * 100);
+    rc = krl_gothos_get_context(db, project_id, "evap_entity", 1,
+                                 HALF_LIFE_HOURS, STRENGTH_MIN, VISIBILITY_THRESHOLD,
+                                 ctxbuf, sizeof(ctxbuf));
+    CHECK(rc == 0, "get_context succeeds with a decayed neighbor entity");
+    CHECK(strstr(ctxbuf, "\"evap_entity_2\"") == NULL,
+          "get_context's entities list excludes a neighbor decayed below visibility_threshold");
+
+    backdate(raw, "entities", eid, HALF_LIFE_HOURS * 100);
+    rc = krl_gothos_get_context(db, project_id, "evap_entity", 1,
+                                 HALF_LIFE_HOURS, STRENGTH_MIN, VISIBILITY_THRESHOLD,
+                                 ctxbuf, sizeof(ctxbuf));
+    CHECK(rc == 0, "get_context succeeds with the focus entity itself decayed");
+    CHECK(strstr(ctxbuf, "\"evap_entity\"") != NULL,
+          "get_context always includes the focus entity, even decayed below visibility_threshold");
+
+    /* ── no_covergroup: same exclude/reinforce/reappear cycle ────────────── */
+
+    int64_t agent_id = 0;
+    rc = krl_entity_insert(db, project_id, "UVM_AGENT", "evap_agent",
+                            "evap_test.sv", 40, 50, 1.0f, &agent_id);
+    CHECK(rc == 0 && agent_id > 0, "insert test UVM_AGENT with no coverage relation");
+
+    rc = krl_gothos_no_covergroup(db, project_id,
+                                   HALF_LIFE_HOURS, STRENGTH_MIN, VISIBILITY_THRESHOLD,
+                                   qbuf, sizeof(qbuf));
+    CHECK(rc == 0 && strstr(qbuf, "evap_agent") != NULL,
+          "fresh UVM_AGENT with no coverage appears in no_covergroup results");
+
+    backdate(raw, "entities", agent_id, HALF_LIFE_HOURS * 100);
+    rc = krl_gothos_no_covergroup(db, project_id,
+                                   HALF_LIFE_HOURS, STRENGTH_MIN, VISIBILITY_THRESHOLD,
+                                   qbuf, sizeof(qbuf));
+    CHECK(rc == 0 && strstr(qbuf, "evap_agent") == NULL,
+          "decayed-below-threshold UVM_AGENT is excluded from no_covergroup results");
+
+    rc = krl_reinforce_entity(db, agent_id);
+    CHECK(rc == 0, "reinforce the decayed UVM_AGENT");
+    rc = krl_gothos_no_covergroup(db, project_id,
+                                   HALF_LIFE_HOURS, STRENGTH_MIN, VISIBILITY_THRESHOLD,
+                                   qbuf, sizeof(qbuf));
+    CHECK(rc == 0 && strstr(qbuf, "evap_agent") != NULL,
+          "reinforcing the excluded UVM_AGENT brings it back into no_covergroup results");
+
     PQfinish(raw);
     krl_db_close(db);
 

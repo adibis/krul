@@ -114,7 +114,17 @@ pub fn context(
     const l = @min(focus_name.len, 255);
     @memcpy(buf[0..l], focus_name[0..l]);
     buf[l] = 0;
-    const rc = c.krl_gothos_get_context(db, project_id, @ptrCast(&buf), depth, out.ptr, out.len);
+    const rc = c.krl_gothos_get_context(
+        db,
+        project_id,
+        @ptrCast(&buf),
+        depth,
+        g_decay.half_life_hours,
+        g_decay.strength_min,
+        g_decay.visibility_threshold,
+        out.ptr,
+        out.len,
+    );
     if (rc != 0) return error.QueryFailed;
     const end = std.mem.indexOfScalar(u8, out, 0) orelse out.len;
     return out[0..end];
@@ -127,7 +137,15 @@ pub fn noCovergroup(
     project_id: i64,
     out: []u8,
 ) ![]const u8 {
-    const rc = c.krl_gothos_no_covergroup(db, project_id, out.ptr, out.len);
+    const rc = c.krl_gothos_no_covergroup(
+        db,
+        project_id,
+        g_decay.half_life_hours,
+        g_decay.strength_min,
+        g_decay.visibility_threshold,
+        out.ptr,
+        out.len,
+    );
     if (rc != 0) return error.QueryFailed;
     const end = std.mem.indexOfScalar(u8, out, 0) orelse out.len;
     return out[0..end];

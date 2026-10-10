@@ -121,14 +121,24 @@ int krl_entity_get_by_id(KrlDb *db, int64_t entity_id,
                           char *out, size_t out_size);
 
 /* Returns {"entities":[...],"relations":[...]} centered on focus_name.
- * depth is accepted but currently only depth=1 (direct neighbors) is used. */
+ * depth is accepted but currently only depth=1 (direct neighbors) is used.
+ * The focus entity itself is always included regardless of strength (it was
+ * named explicitly, same reasoning as krl_entity_get_by_id); neighboring
+ * entities and relations are subject to the same visibility_threshold
+ * filter as krl_gothos_query_entities/_relations. */
 int krl_gothos_get_context(KrlDb *db, int64_t project_id,
                             const char *focus_name,
                             int depth,
+                            double half_life_hours, double strength_min,
+                            double visibility_threshold,
                             char *out, size_t out_size);
 
-/* Returns JSON array of UVM_AGENT entities that have no HAS_COVERGROUP edge. */
+/* Returns JSON array of UVM_AGENT entities that have no HAS_COVERGROUP edge,
+ * excluding ones below visibility_threshold (same rule as the other
+ * query.* functions above). */
 int krl_gothos_no_covergroup(KrlDb *db, int64_t project_id,
+                              double half_life_hours, double strength_min,
+                              double visibility_threshold,
                               char *out, size_t out_size);
 
 /* Kanban task board -----------------------------------------------------------

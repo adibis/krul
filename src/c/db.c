@@ -547,12 +547,19 @@ int krl_entity_get_by_id(KrlDb *db, int64_t entity_id, char *out, size_t out_siz
 
 int krl_gothos_get_context(KrlDb *db, int64_t project_id,
                             const char *focus_name, int depth,
+                            double half_life_hours, double strength_min,
+                            double visibility_threshold,
                             char *out, size_t out_size) {
     (void)depth; /* depth > 1 reserved for future multi-hop traversal */
-    char proj_str[24], focus_id_str[24];
+    char proj_str[24], focus_id_str[24], hl_str[32], min_str[32], vis_str[32];
     snprintf(proj_str, sizeof(proj_str), "%lld", (long long)project_id);
+    snprintf(hl_str,   sizeof(hl_str),   "%.9f", half_life_hours);
+    snprintf(min_str,  sizeof(min_str),  "%.9f", strength_min);
+    snprintf(vis_str,  sizeof(vis_str),  "%.9f", visibility_threshold);
 
-    /* Resolve focus entity → id */
+    /* Resolve focus entity → id. Named explicitly by the caller, so this
+     * lookup itself is not strength-filtered — same reasoning as
+     * krl_entity_get_by_id. */
     const char *id_sql =
         "SELECT id FROM entities WHERE project_id=$1 AND name=$2 LIMIT 1";
     const char *id_p[2] = { proj_str, focus_name };
@@ -566,8 +573,11 @@ int krl_gothos_get_context(KrlDb *db, int64_t project_id,
     snprintf(focus_id_str, sizeof(focus_id_str), "%s", PQgetvalue(r, 0, 0));
     PQclear(r);
 
-    /* Get all relations involving the focus entity (both directions) */
-    const char *rel_sql =
+    const char *ctx_params[5] = { proj_str, focus_id_str, hl_str, min_str, vis_str };
+
+    /* Get all relations involving the focus entity (both directions),
+     * excluding ones decayed below visibility_threshold. */
+    char rel_sql[768] =
         "SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)::text FROM ("
         "  SELECT r.kind, ef.name AS from_name, ef.kind AS from_kind,"
         "         et.name AS to_name, et.kind AS to_kind, r.confidence"
@@ -575,10 +585,11 @@ int krl_gothos_get_context(KrlDb *db, int64_t project_id,
         "  JOIN entities ef ON r.from_entity_id=ef.id"
         "  JOIN entities et ON r.to_entity_id=et.id"
         "  WHERE r.project_id=$1"
-        "    AND (r.from_entity_id=$2::bigint OR r.to_entity_id=$2::bigint)"
-        ") t";
-    const char *rel_p[2] = { proj_str, focus_id_str };
-    r = PQexecParams(db->conn, rel_sql, 2, NULL, rel_p, NULL, NULL, 0);
+        "    AND (r.from_entity_id=$2::bigint OR r.to_entity_id=$2::bigint)\n";
+    append_visibility_clause(rel_sql, sizeof(rel_sql), "r.strength", "r.last_reinforced_at", 3, 4, 5);
+    strncat(rel_sql, ") t", sizeof(rel_sql) - strlen(rel_sql) - 1);
+
+    r = PQexecParams(db->conn, rel_sql, 5, NULL, ctx_params, NULL, NULL, 0);
     char rels[16384];
     if (PQresultStatus(r) != PGRES_TUPLES_OK) {
         snprintf(rels, sizeof(rels), "[]");
@@ -588,22 +599,29 @@ int krl_gothos_get_context(KrlDb *db, int64_t project_id,
     }
     PQclear(r);
 
-    /* Get focus entity + all direct neighbors */
-    const char *ent_sql =
+    /* Get focus entity (always included, unfiltered) + direct neighbors
+     * (filtered: a decayed-below-threshold neighbor is left out, same rule
+     * as krl_gothos_query_entities). */
+    char ent_sql[1024] =
         "SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)::text FROM ("
         "  SELECT DISTINCT e.id, e.kind, e.name, e.file_path, e.line_start, e.confidence"
         "  FROM entities e WHERE e.project_id=$1 AND ("
         "    e.id=$2::bigint"
-        "    OR e.id IN (SELECT from_entity_id FROM relationships"
-        "                WHERE project_id=$1 AND to_entity_id=$2::bigint)"
-        "    OR e.id IN (SELECT to_entity_id FROM relationships"
-        "                WHERE project_id=$1 AND from_entity_id=$2::bigint)"
-        "  )"
-        ") t";
-    const char *ent_p[2] = { proj_str, focus_id_str };
-    r = PQexecParams(db->conn, ent_sql, 2, NULL, ent_p, NULL, NULL, 0);
+        "    OR (e.id IN (SELECT from_entity_id FROM relationships"
+        "                 WHERE project_id=$1 AND to_entity_id=$2::bigint)\n";
+    append_visibility_clause(ent_sql, sizeof(ent_sql), "e.strength", "e.last_reinforced_at", 3, 4, 5);
+    strncat(ent_sql,
+        "       )"
+        "    OR (e.id IN (SELECT to_entity_id FROM relationships"
+        "                 WHERE project_id=$1 AND from_entity_id=$2::bigint)\n",
+        sizeof(ent_sql) - strlen(ent_sql) - 1);
+    append_visibility_clause(ent_sql, sizeof(ent_sql), "e.strength", "e.last_reinforced_at", 3, 4, 5);
+    strncat(ent_sql, "       )\n  )\n) t", sizeof(ent_sql) - strlen(ent_sql) - 1);
+
+    r = PQexecParams(db->conn, ent_sql, 5, NULL, ctx_params, NULL, NULL, 0);
     char ents[16384];
     if (PQresultStatus(r) != PGRES_TUPLES_OK) {
+        fprintf(stderr, "get_context entities: %s\n", PQerrorMessage(db->conn));
         snprintf(ents, sizeof(ents), "[]");
     } else {
         const char *ej = PQgetvalue(r, 0, 0);
@@ -616,10 +634,16 @@ int krl_gothos_get_context(KrlDb *db, int64_t project_id,
 }
 
 int krl_gothos_no_covergroup(KrlDb *db, int64_t project_id,
+                              double half_life_hours, double strength_min,
+                              double visibility_threshold,
                               char *out, size_t out_size) {
-    char proj_str[24];
+    char proj_str[24], hl_str[32], min_str[32], vis_str[32];
     snprintf(proj_str, sizeof(proj_str), "%lld", (long long)project_id);
-    const char *sql =
+    snprintf(hl_str,   sizeof(hl_str),   "%.9f", half_life_hours);
+    snprintf(min_str,  sizeof(min_str),  "%.9f", strength_min);
+    snprintf(vis_str,  sizeof(vis_str),  "%.9f", visibility_threshold);
+
+    char sql[896] =
         "SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)::text FROM ("
         "  SELECT e.name, e.kind, e.file_path FROM entities e"
         "  WHERE e.project_id=$1 AND e.kind='UVM_AGENT'"
@@ -627,11 +651,12 @@ int krl_gothos_no_covergroup(KrlDb *db, int64_t project_id,
         "      SELECT 1 FROM relationships r"
         "      WHERE r.project_id=$1 AND r.kind='HAS_COVERGROUP'"
         "        AND r.from_entity_id=e.id"
-        "    )"
-        "  ORDER BY e.name"
-        ") t";
-    const char *params[1] = { proj_str };
-    PGresult *res = PQexecParams(db->conn, sql, 1, NULL, params, NULL, NULL, 0);
+        "    )\n";
+    append_visibility_clause(sql, sizeof(sql), "e.strength", "e.last_reinforced_at", 2, 3, 4);
+    strncat(sql, "  ORDER BY e.name\n) t", sizeof(sql) - strlen(sql) - 1);
+
+    const char *params[4] = { proj_str, hl_str, min_str, vis_str };
+    PGresult *res = PQexecParams(db->conn, sql, 4, NULL, params, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
         fprintf(stderr, "no_covergroup: %s\n", PQerrorMessage(db->conn));
         PQclear(res);
