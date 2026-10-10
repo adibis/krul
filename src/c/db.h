@@ -95,15 +95,30 @@ int64_t krl_project_lookup(KrlDb *db, const char *name);
  * Return 0 on success, -1 on error (out is set to a fallback value on error).
  *
  * NULL for optional filter parameters means "no filter" (match all). */
+/* half_life_hours/strength_min/visibility_threshold come from krul.toml's
+ * [decay] section (see config.zig); rows whose current decayed strength
+ * falls below visibility_threshold are excluded here but remain reachable
+ * via krl_entity_get_by_id() below, which never filters. */
 int krl_gothos_query_entities(KrlDb *db, int64_t project_id,
                                const char *kind,         /* NULL = any */
                                const char *name_pattern, /* NULL = any, ILIKE */
+                               double half_life_hours, double strength_min,
+                               double visibility_threshold,
                                char *out, size_t out_size);
 
 int krl_gothos_query_relations(KrlDb *db, int64_t project_id,
                                 const char *from_name, /* NULL = any */
                                 const char *rel_kind,  /* NULL = any */
+                                double half_life_hours, double strength_min,
+                                double visibility_threshold,
                                 char *out, size_t out_size);
+
+/* Direct by-id fetch, bypassing the strength/visibility filter entirely —
+ * a row excluded from the default query.* results above is still reachable
+ * this way, by design (see PLAN.md Phase 10's "Done when").
+ * Returns 0 on success, -1 if id doesn't exist (out is set to "null"). */
+int krl_entity_get_by_id(KrlDb *db, int64_t entity_id,
+                          char *out, size_t out_size);
 
 /* Returns {"entities":[...],"relations":[...]} centered on focus_name.
  * depth is accepted but currently only depth=1 (direct neighbors) is used. */

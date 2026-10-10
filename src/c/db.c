@@ -431,22 +431,48 @@ int64_t krl_project_lookup(KrlDb *db, const char *name) {
 
 /* ── Gothos bundled query API ────────────────────────────────────────────────── */
 
+/* Shared by both query functions below: a decayed-strength expression,
+ * clamped to strength_min, compared against visibility_threshold. Takes the
+ * $-parameter numbers for (half_life_hours, strength_min, visibility_threshold)
+ * so each caller can place them wherever they land in its own param list. */
+static void append_visibility_clause(char *sql, size_t sql_size,
+                                      const char *strength_col,
+                                      const char *last_reinforced_col,
+                                      int hl_param, int min_param, int vis_param) {
+    char clause[320];
+    snprintf(clause, sizeof(clause),
+        "    AND GREATEST($%d::double precision, LEAST(1.0, %s *"
+        " power(0.5::double precision,"
+        " extract(epoch from now() - %s) / ($%d::double precision * 3600))))"
+        " >= $%d::double precision\n",
+        min_param, strength_col, last_reinforced_col, hl_param, vis_param);
+    size_t len = strlen(sql);
+    snprintf(sql + len, sql_size - len, "%s", clause);
+}
+
 int krl_gothos_query_entities(KrlDb *db, int64_t project_id,
                                const char *kind, const char *name_pattern,
+                               double half_life_hours, double strength_min,
+                               double visibility_threshold,
                                char *out, size_t out_size) {
-    char proj_str[24];
+    char proj_str[24], hl_str[32], min_str[32], vis_str[32];
     snprintf(proj_str, sizeof(proj_str), "%lld", (long long)project_id);
+    snprintf(hl_str,   sizeof(hl_str),   "%.9f", half_life_hours);
+    snprintf(min_str,  sizeof(min_str),  "%.9f", strength_min);
+    snprintf(vis_str,  sizeof(vis_str),  "%.9f", visibility_threshold);
+
     /* NULL param → SQL NULL → filter disabled via "IS NULL OR col=$N" pattern. */
-    const char *sql =
+    char sql[1024] =
         "SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)::text FROM ("
         "  SELECT id, kind, name, file_path, line_start, confidence"
         "  FROM entities WHERE project_id=$1"
         "    AND ($2::text IS NULL OR kind=$2)"
-        "    AND ($3::text IS NULL OR name ILIKE $3)"
-        "  ORDER BY name LIMIT 100"
-        ") t";
-    const char *params[3] = { proj_str, kind, name_pattern };
-    PGresult *res = PQexecParams(db->conn, sql, 3, NULL, params, NULL, NULL, 0);
+        "    AND ($3::text IS NULL OR name ILIKE $3)\n";
+    append_visibility_clause(sql, sizeof(sql), "strength", "last_reinforced_at", 4, 5, 6);
+    strncat(sql, "  ORDER BY name LIMIT 100\n) t", sizeof(sql) - strlen(sql) - 1);
+
+    const char *params[6] = { proj_str, kind, name_pattern, hl_str, min_str, vis_str };
+    PGresult *res = PQexecParams(db->conn, sql, 6, NULL, params, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
         fprintf(stderr, "query_entities: %s\n", PQerrorMessage(db->conn));
         PQclear(res);
@@ -461,10 +487,16 @@ int krl_gothos_query_entities(KrlDb *db, int64_t project_id,
 
 int krl_gothos_query_relations(KrlDb *db, int64_t project_id,
                                 const char *from_name, const char *rel_kind,
+                                double half_life_hours, double strength_min,
+                                double visibility_threshold,
                                 char *out, size_t out_size) {
-    char proj_str[24];
+    char proj_str[24], hl_str[32], min_str[32], vis_str[32];
     snprintf(proj_str, sizeof(proj_str), "%lld", (long long)project_id);
-    const char *sql =
+    snprintf(hl_str,   sizeof(hl_str),   "%.9f", half_life_hours);
+    snprintf(min_str,  sizeof(min_str),  "%.9f", strength_min);
+    snprintf(vis_str,  sizeof(vis_str),  "%.9f", visibility_threshold);
+
+    char sql[1024] =
         "SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json)::text FROM ("
         "  SELECT r.kind, ef.name AS from_name, ef.kind AS from_kind,"
         "         et.name AS to_name, et.kind AS to_kind, r.confidence"
@@ -473,11 +505,12 @@ int krl_gothos_query_relations(KrlDb *db, int64_t project_id,
         "  JOIN entities et ON r.to_entity_id=et.id"
         "  WHERE r.project_id=$1"
         "    AND ($2::text IS NULL OR ef.name=$2)"
-        "    AND ($3::text IS NULL OR r.kind=$3)"
-        "  LIMIT 200"
-        ") t";
-    const char *params[3] = { proj_str, from_name, rel_kind };
-    PGresult *res = PQexecParams(db->conn, sql, 3, NULL, params, NULL, NULL, 0);
+        "    AND ($3::text IS NULL OR r.kind=$3)\n";
+    append_visibility_clause(sql, sizeof(sql), "r.strength", "r.last_reinforced_at", 4, 5, 6);
+    strncat(sql, "  LIMIT 200\n) t", sizeof(sql) - strlen(sql) - 1);
+
+    const char *params[6] = { proj_str, from_name, rel_kind, hl_str, min_str, vis_str };
+    PGresult *res = PQexecParams(db->conn, sql, 6, NULL, params, NULL, NULL, 0);
     if (PQresultStatus(res) != PGRES_TUPLES_OK) {
         fprintf(stderr, "query_relations: %s\n", PQerrorMessage(db->conn));
         PQclear(res);
@@ -486,6 +519,28 @@ int krl_gothos_query_relations(KrlDb *db, int64_t project_id,
     }
     const char *json = PQgetvalue(res, 0, 0);
     snprintf(out, out_size, "%s", json ? json : "[]");
+    PQclear(res);
+    return 0;
+}
+
+int krl_entity_get_by_id(KrlDb *db, int64_t entity_id, char *out, size_t out_size) {
+    const char *sql =
+        "SELECT row_to_json(t)::text FROM ("
+        "  SELECT id, kind, name, file_path, line_start, line_end, confidence,"
+        "    strength, last_reinforced_at"
+        "  FROM entities WHERE id=$1"
+        ") t";
+    char id_str[24];
+    snprintf(id_str, sizeof(id_str), "%lld", (long long)entity_id);
+    const char *params[1] = { id_str };
+    PGresult *res = PQexecParams(db->conn, sql, 1, NULL, params, NULL, NULL, 0);
+    if (PQresultStatus(res) != PGRES_TUPLES_OK || PQntuples(res) == 0) {
+        PQclear(res);
+        snprintf(out, out_size, "null");
+        return -1;
+    }
+    const char *json = PQgetvalue(res, 0, 0);
+    snprintf(out, out_size, "%s", json ? json : "null");
     PQclear(res);
     return 0;
 }

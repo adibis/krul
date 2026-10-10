@@ -153,6 +153,50 @@ int main(void) {
     CHECK(rc == 0, "read relation strength immediately after reinforcement");
     CHECK_NEAR(rs, 1.0, 0.001, "reinforcement resets relation strength to the ceiling");
 
+    /* ── Visibility filtering: krl_gothos_query_entities/relations exclude
+     * decayed rows below visibility_threshold; krl_entity_get_by_id never
+     * filters, so an excluded row is still directly reachable by id ──── */
+
+    const double VISIBILITY_THRESHOLD = 0.1; /* above STRENGTH_MIN (0.05) on purpose */
+
+    /* eid was reinforced above; decay it again so this section doesn't
+     * depend on state left over from the earlier checks. */
+    backdate(raw, "entities", eid, HALF_LIFE_HOURS * 100);
+
+    char qbuf[65536];
+    rc = krl_gothos_query_entities(db, project_id, "MODULE", NULL,
+                                    HALF_LIFE_HOURS, STRENGTH_MIN, VISIBILITY_THRESHOLD,
+                                    qbuf, sizeof(qbuf));
+    CHECK(rc == 0, "query_entities succeeds while a row is below visibility_threshold");
+    CHECK(strstr(qbuf, "\"evap_entity\"") == NULL,
+          "decayed-below-threshold entity is excluded from default query_entities results");
+    CHECK(strstr(qbuf, "evap_entity_2") != NULL,
+          "a still-fresh sibling entity remains in default query_entities results");
+
+    char idbuf[4096];
+    rc = krl_entity_get_by_id(db, eid, idbuf, sizeof(idbuf));
+    CHECK(rc == 0 && strstr(idbuf, "evap_entity") != NULL,
+          "excluded entity is still directly fetchable by id");
+
+    rc = krl_entity_get_by_id(db, 999999999, idbuf, sizeof(idbuf));
+    CHECK(rc == -1, "fetching a nonexistent id by id is reported as an error");
+
+    rc = krl_reinforce_entity(db, eid);
+    CHECK(rc == 0, "reinforce the decayed entity before re-querying");
+    rc = krl_gothos_query_entities(db, project_id, "MODULE", NULL,
+                                    HALF_LIFE_HOURS, STRENGTH_MIN, VISIBILITY_THRESHOLD,
+                                    qbuf, sizeof(qbuf));
+    CHECK(rc == 0 && strstr(qbuf, "\"evap_entity\"") != NULL,
+          "reinforcing the excluded entity brings it back into default query_entities results");
+
+    backdate(raw, "relationships", rid, HALF_LIFE_HOURS * 100);
+    rc = krl_gothos_query_relations(db, project_id, NULL, "DRIVES",
+                                     HALF_LIFE_HOURS, STRENGTH_MIN, VISIBILITY_THRESHOLD,
+                                     qbuf, sizeof(qbuf));
+    CHECK(rc == 0, "query_relations succeeds while a row is below visibility_threshold");
+    CHECK(strstr(qbuf, "DRIVES") == NULL,
+          "decayed-below-threshold relation is excluded from default query_relations results");
+
     PQfinish(raw);
     krl_db_close(db);
 

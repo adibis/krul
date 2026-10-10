@@ -4,6 +4,7 @@ const Dir = std.Io.Dir;
 const c = @import("c.zig").lib;
 const q = @import("queue.zig");
 const ipc = @import("ipc.zig");
+const kb = @import("query.zig");
 const llm = @import("llm.zig");
 const hooks = @import("hooks.zig");
 const config = @import("config.zig");
@@ -37,15 +38,17 @@ pub fn cmd_start(io: std.Io) !void {
             log.warn("postgresql migration failed — running without persistence", .{});
         }
         _ = c.krl_kanban_migrate(db);
+        _ = c.krl_evaporation_migrate(db);
     } else {
         log.warn("postgresql unavailable — task queue is in-memory only", .{});
     }
 
-    // Load config first — embed server and LLM both need it.
+    // Load config first — embed server, LLM, and decay-aware queries all need it.
     var cfg_buf: [4096]u8 = undefined;
     const cfg = config.load(&cfg_buf, "krul.toml") catch config.Config{};
     llm.init(io, cfg.llm_endpoint, cfg.llm_model, cfg.llm_api_key_env);
     hooks.init(cfg.gate_process_script);
+    kb.initDecay(cfg);
 
     gear_registry.loadAll(q.g_ally) catch |e|
         log.warn("gear loading failed: {}", .{e});

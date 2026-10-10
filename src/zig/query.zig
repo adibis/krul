@@ -4,6 +4,27 @@
 
 const std = @import("std");
 const c = @import("c.zig").lib;
+const config = @import("config.zig");
+
+// Phase 10 decay parameters, set once at daemon startup via initDecay().
+// Defaults here match config.Config's own defaults, so a daemon that never
+// calls initDecay() (e.g. a test harness exercising only the IPC layer)
+// still gets sane evaporation behavior rather than zeroed-out thresholds.
+pub const DecayConfig = struct {
+    half_life_hours:      f64 = 720.0,
+    strength_min:         f64 = 0.05,
+    visibility_threshold: f64 = 0.1,
+};
+
+pub var g_decay: DecayConfig = .{};
+
+pub fn initDecay(cfg: config.Config) void {
+    g_decay = .{
+        .half_life_hours      = cfg.decay_half_life_hours,
+        .strength_min         = cfg.decay_strength_min,
+        .visibility_threshold = cfg.decay_visibility_threshold,
+    };
+}
 
 // Resolve a project name to its id. Returns 1 (first project) when name is
 // null or not found — callers that need strict isolation should check for -1.
@@ -42,6 +63,9 @@ pub fn entities(
         project_id,
         toZopt(kind, &kind_buf),
         toZopt(name_pattern, &name_buf),
+        g_decay.half_life_hours,
+        g_decay.strength_min,
+        g_decay.visibility_threshold,
         out.ptr,
         out.len,
     );
@@ -66,6 +90,9 @@ pub fn relations(
         project_id,
         toZopt(from_name, &from_buf),
         toZopt(rel_kind, &kind_buf),
+        g_decay.half_life_hours,
+        g_decay.strength_min,
+        g_decay.visibility_threshold,
         out.ptr,
         out.len,
     );
@@ -102,6 +129,20 @@ pub fn noCovergroup(
 ) ![]const u8 {
     const rc = c.krl_gothos_no_covergroup(db, project_id, out.ptr, out.len);
     if (rc != 0) return error.QueryFailed;
+    const end = std.mem.indexOfScalar(u8, out, 0) orelse out.len;
+    return out[0..end];
+}
+
+// entityById writes one entity's full JSON record, bypassing the strength/
+// visibility filter that entities() applies — a row excluded from default
+// results is still reachable this way, by design (see PLAN.md Phase 10).
+pub fn entityById(
+    db: *c.KrlDb,
+    entity_id: i64,
+    out: []u8,
+) ![]const u8 {
+    const rc = c.krl_entity_get_by_id(db, entity_id, out.ptr, out.len);
+    if (rc != 0) return error.NotFound;
     const end = std.mem.indexOfScalar(u8, out, 0) orelse out.len;
     return out[0..end];
 }
