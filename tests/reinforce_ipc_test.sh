@@ -29,6 +29,12 @@ check() {
 }
 
 cleanup() {
+    # reinforcement_events has no FK to entities (it deliberately outlives
+    # its subject), so it needs its own cleanup rather than relying on the
+    # project delete's cascade.
+    if [[ -n "${EID:-}" ]]; then
+        psql "$PSQL_DB" -q -c "DELETE FROM reinforcement_events WHERE target_id = ${EID};" >/dev/null 2>&1 || true
+    fi
     psql "$PSQL_DB" -q -c "DELETE FROM krul_projects WHERE name = '${PROJECT}';" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -74,6 +80,14 @@ check "missing id is reported as an error" "$resp" '"error"'
 
 resp=$(send "{\"method\":\"reinforce\",\"id\":${EID}}")
 check "missing kind is reported as an error" "$resp" '"error"'
+
+resp=$(send "{\"method\":\"reinforce\",\"kind\":\"entity\",\"id\":${EID},\"candidates\":[${EID},999]}")
+check "reinforce with a candidates array still succeeds" "$resp" '"reinforced":true'
+logged=$(psql "$PSQL_DB" -q -t -A -c "
+  SELECT candidate_set FROM reinforcement_events
+  WHERE target_kind='entity' AND target_id=${EID}
+  ORDER BY id DESC LIMIT 1;")
+check "candidate set was logged verbatim in reinforcement_events" "$logged" "[${EID}, 999]"
 
 echo
 echo "=== $PASS passed, $FAIL failed ==="

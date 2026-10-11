@@ -155,12 +155,35 @@ pub fn noCovergroup(
 // ceiling and last_reinforced_at to now() — the only way strength moves
 // back up; see PLAN.md Phase 10. Returns error.ReinforceFailed if id
 // doesn't exist in the table.
-pub fn reinforceEntity(db: *c.KrlDb, entity_id: i64) !void {
+//
+// candidate_set_json, if given, is logged alongside the reinforcement
+// (see krl_log_reinforcement) — the rest of what the caller was choosing
+// from, needed for propensity correction later and unrecoverable if not
+// captured now. A logging failure does not fail the reinforcement itself,
+// which has already committed by the time logging runs.
+pub fn reinforceEntity(db: *c.KrlDb, entity_id: i64, candidate_set_json: ?[]const u8) !void {
     if (c.krl_reinforce_entity(db, entity_id) != 0) return error.ReinforceFailed;
+    logReinforcement(db, "entity", entity_id, candidate_set_json);
 }
 
-pub fn reinforceRelation(db: *c.KrlDb, relation_id: i64) !void {
+pub fn reinforceRelation(db: *c.KrlDb, relation_id: i64, candidate_set_json: ?[]const u8) !void {
     if (c.krl_reinforce_relation(db, relation_id) != 0) return error.ReinforceFailed;
+    logReinforcement(db, "relation", relation_id, candidate_set_json);
+}
+
+const log = std.log.scoped(.query);
+
+fn logReinforcement(db: *c.KrlDb, target_kind: [:0]const u8, target_id: i64, candidate_set_json: ?[]const u8) void {
+    var buf: [8192:0]u8 = undefined;
+    const c_candidates: ?[*:0]const u8 = if (candidate_set_json) |s| blk: {
+        const l = @min(s.len, buf.len - 1);
+        @memcpy(buf[0..l], s[0..l]);
+        buf[l] = 0;
+        break :blk @ptrCast(&buf);
+    } else null;
+
+    if (c.krl_log_reinforcement(db, target_kind, target_id, c_candidates) != 0)
+        log.warn("failed to log reinforcement event (kind={s} id={d})", .{ target_kind, target_id });
 }
 
 // entityById writes one entity's full JSON record, bypassing the strength/

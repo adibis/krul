@@ -204,3 +204,14 @@ int krl_entity_strength(KrlDb *db, int64_t entity_id,
 int krl_relation_strength(KrlDb *db, int64_t relation_id,
                           double half_life_hours, double strength_min,
                           double *out);
+
+/* krl_log_reinforcement(): record one reinforcement event in
+ * reinforcement_events, including whatever candidate set (a raw JSON array
+ * string, or NULL) the caller was choosing from. Required for propensity
+ * correction later — without logging the candidate set, reinforcement data
+ * is confounded with retrieval bias and that confound is unrecoverable
+ * once the data is gone, so this is called on every reinforcement, not
+ * added after the fact. target_kind must be "entity" or "relation".
+ * Returns 0 on success, -1 on error. */
+int krl_log_reinforcement(KrlDb *db, const char *target_kind, int64_t target_id,
+                           const char *candidate_set_json /* NULL = none supplied */);

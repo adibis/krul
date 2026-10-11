@@ -835,7 +835,17 @@ int krl_evaporation_migrate(KrlDb *db) {
 
         "ALTER TABLE relationships"
         "  ADD COLUMN IF NOT EXISTS strength FLOAT NOT NULL DEFAULT 1.0,"
-        "  ADD COLUMN IF NOT EXISTS last_reinforced_at TIMESTAMPTZ NOT NULL DEFAULT NOW();";
+        "  ADD COLUMN IF NOT EXISTS last_reinforced_at TIMESTAMPTZ NOT NULL DEFAULT NOW();"
+
+        "CREATE TABLE IF NOT EXISTS reinforcement_events ("
+        "  id BIGSERIAL PRIMARY KEY,"
+        "  target_kind TEXT NOT NULL CHECK (target_kind IN ('entity', 'relation')),"
+        "  target_id BIGINT NOT NULL,"
+        "  candidate_set JSONB,"
+        "  reinforced_at TIMESTAMPTZ NOT NULL DEFAULT NOW());"
+
+        "CREATE INDEX IF NOT EXISTS idx_reinforcement_events_target"
+        "  ON reinforcement_events(target_kind, target_id);";
 
     PGresult *res = PQexec(db->conn, ddl);
     int ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
@@ -871,6 +881,23 @@ int krl_reinforce_entity(KrlDb *db, int64_t entity_id) {
 
 int krl_reinforce_relation(KrlDb *db, int64_t relation_id) {
     return reinforce_row(db, "relationships", relation_id);
+}
+
+int krl_log_reinforcement(KrlDb *db, const char *target_kind, int64_t target_id,
+                           const char *candidate_set_json) {
+    const char *sql =
+        "INSERT INTO reinforcement_events(target_kind, target_id, candidate_set)"
+        " VALUES($1, $2, $3::jsonb)";
+    char id_str[24];
+    snprintf(id_str, sizeof(id_str), "%lld", (long long)target_id);
+    /* candidate_set_json may be NULL — libpq treats a NULL paramValues
+     * entry as SQL NULL, same pattern as the optional filters above. */
+    const char *params[3] = { target_kind, id_str, candidate_set_json };
+    PGresult *res = PQexecParams(db->conn, sql, 3, NULL, params, NULL, NULL, 0);
+    int ok = (PQresultStatus(res) == PGRES_COMMAND_OK);
+    if (!ok) fprintf(stderr, "krl_log_reinforcement: %s\n", PQerrorMessage(db->conn));
+    PQclear(res);
+    return ok ? 0 : -1;
 }
 
 static int strength_of(KrlDb *db, const char *table, int64_t id,

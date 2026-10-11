@@ -254,6 +254,35 @@ int main(void) {
     CHECK(rc == 0 && strstr(qbuf, "evap_agent") != NULL,
           "reinforcing the excluded UVM_AGENT brings it back into no_covergroup results");
 
+    /* ── krl_log_reinforcement: candidate set stored verbatim, NULL allowed ─ */
+
+    rc = krl_log_reinforcement(db, "entity", eid, "[10,11,12]");
+    CHECK(rc == 0, "log a reinforcement event with a candidate set");
+
+    rc = krl_log_reinforcement(db, "entity", eid, NULL);
+    CHECK(rc == 0, "log a reinforcement event with no candidate set (NULL)");
+
+    {
+        char sql[256];
+        snprintf(sql, sizeof(sql),
+            "SELECT candidate_set FROM reinforcement_events"
+            " WHERE target_kind='entity' AND target_id=%lld ORDER BY id DESC LIMIT 2",
+            (long long)eid);
+        PGresult *r = PQexec(raw, sql);
+        CHECK(PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) == 2,
+              "two reinforcement_events rows exist for this entity");
+        if (PQresultStatus(r) == PGRES_TUPLES_OK && PQntuples(r) == 2) {
+            CHECK(PQgetisnull(r, 0, 0), "most recent event's candidate_set is NULL as logged");
+            CHECK(!PQgetisnull(r, 1, 0) &&
+                  strcmp(PQgetvalue(r, 1, 0), "[10, 11, 12]") == 0,
+                  "earlier event's candidate_set matches what was logged");
+        }
+        PQclear(r);
+    }
+
+    rc = krl_log_reinforcement(db, "bogus_kind", eid, NULL);
+    CHECK(rc == -1, "logging an invalid target_kind is rejected by the CHECK constraint");
+
     PQfinish(raw);
     krl_db_close(db);
 

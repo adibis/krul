@@ -204,12 +204,16 @@ fn dispatch(msg: []const u8) ![]const u8 {
             return "{\"error\":\"missing kind (entity|relation)\"}";
         const id = extractInt64(msg, "id") orelse
             return "{\"error\":\"missing id\"}";
+        // Optional: the broader candidate set this reinforcement was chosen
+        // from, e.g. "candidates":[12,14,17] — logged verbatim for later
+        // propensity correction, not validated beyond "looks like an array".
+        const candidates = extractRawJsonArray(msg, "candidates");
 
         if (std.mem.eql(u8, kind, "entity")) {
-            kb.reinforceEntity(db, id) catch
+            kb.reinforceEntity(db, id, candidates) catch
                 return "{\"error\":\"reinforce failed — id not found?\"}";
         } else if (std.mem.eql(u8, kind, "relation")) {
-            kb.reinforceRelation(db, id) catch
+            kb.reinforceRelation(db, id, candidates) catch
                 return "{\"error\":\"reinforce failed — id not found?\"}";
         } else {
             return "{\"error\":\"unknown kind — use entity|relation\"}";
@@ -411,4 +415,29 @@ fn extractInt64(msg: []const u8, field: []const u8) ?i64 {
     while (i < msg.len and msg[i] >= '0' and msg[i] <= '9') i += 1;
     if (i == num_start) return null;
     return std.fmt.parseInt(i64, msg[num_start..i], 10) catch null;
+}
+
+// Returns the raw "[...]" slice for a JSON array field (brackets included),
+// tracking nesting depth so a nested array doesn't end the match early.
+// Used for passing a candidate-set array straight through to Postgres as
+// jsonb text without this layer having to parse or validate its contents.
+fn extractRawJsonArray(msg: []const u8, field: []const u8) ?[]const u8 {
+    var key_buf: [64]u8 = undefined;
+    const key = std.fmt.bufPrint(&key_buf, "\"{s}\":", .{field}) catch return null;
+    var i = (std.mem.indexOf(u8, msg, key) orelse return null) + key.len;
+    while (i < msg.len and msg[i] == ' ') i += 1;
+    if (i >= msg.len or msg[i] != '[') return null;
+
+    const start = i;
+    var depth: i32 = 0;
+    while (i < msg.len) {
+        if (msg[i] == '[') {
+            depth += 1;
+        } else if (msg[i] == ']') {
+            depth -= 1;
+            if (depth == 0) return msg[start .. i + 1];
+        }
+        i += 1;
+    }
+    return null; // unterminated array
 }
