@@ -6,7 +6,6 @@ const log = std.log.scoped(.executor);
 
 pub const sock_path = "/tmp/krul.sock";
 pub const pid_path = "/tmp/kruld.pid";
-pub const default_conninfo = "dbname=krul host=localhost";
 
 pub const TaskKind = enum { shell, index, triage };
 pub const TaskState = enum { pending, running, done, failed };

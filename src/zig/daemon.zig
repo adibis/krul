@@ -30,10 +30,20 @@ pub fn cmd_start(io: std.Io) !void {
 
     write_pidfile(io) catch |err| log.warn("could not write PID file: {}", .{err});
 
-    q.g_db = c.krl_db_open(q.default_conninfo);
+    // Load config first — db conninfo, embed server, LLM, and decay-aware
+    // queries all need it.
+    var cfg_buf: [4096]u8 = undefined;
+    const cfg = config.load(&cfg_buf, "krul.toml") catch config.Config{};
+
+    var conninfo_buf: [256:0]u8 = undefined;
+    const conninfo_len = @min(cfg.db_conninfo.len, conninfo_buf.len - 1);
+    @memcpy(conninfo_buf[0..conninfo_len], cfg.db_conninfo[0..conninfo_len]);
+    conninfo_buf[conninfo_len] = 0;
+
+    q.g_db = c.krl_db_open(&conninfo_buf);
     if (q.g_db) |db| {
         if (c.krl_db_migrate(db) == 0) {
-            log.info("postgresql connected ({s})", .{q.default_conninfo});
+            log.info("postgresql connected ({s})", .{cfg.db_conninfo});
         } else {
             log.warn("postgresql migration failed — running without persistence", .{});
         }
@@ -43,9 +53,6 @@ pub fn cmd_start(io: std.Io) !void {
         log.warn("postgresql unavailable — task queue is in-memory only", .{});
     }
 
-    // Load config first — embed server, LLM, and decay-aware queries all need it.
-    var cfg_buf: [4096]u8 = undefined;
-    const cfg = config.load(&cfg_buf, "krul.toml") catch config.Config{};
     llm.init(io, cfg.llm_endpoint, cfg.llm_model, cfg.llm_api_key_env);
     hooks.init(cfg.gate_process_script);
     kb.initDecay(cfg);
