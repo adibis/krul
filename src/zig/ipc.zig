@@ -198,6 +198,29 @@ fn dispatch(msg: []const u8) ![]const u8 {
         ) catch return "{\"error\":\"buf overflow\"}";
     }
 
+    if (matchMethod(msg, "reinforce")) {
+        const db = q.g_db orelse return "{\"error\":\"db not connected\"}";
+        const kind = extractString(msg, "kind") orelse
+            return "{\"error\":\"missing kind (entity|relation)\"}";
+        const id = extractInt64(msg, "id") orelse
+            return "{\"error\":\"missing id\"}";
+
+        if (std.mem.eql(u8, kind, "entity")) {
+            kb.reinforceEntity(db, id) catch
+                return "{\"error\":\"reinforce failed — id not found?\"}";
+        } else if (std.mem.eql(u8, kind, "relation")) {
+            kb.reinforceRelation(db, id) catch
+                return "{\"error\":\"reinforce failed — id not found?\"}";
+        } else {
+            return "{\"error\":\"unknown kind — use entity|relation\"}";
+        }
+
+        return std.fmt.bufPrint(&g_resp_buf,
+            "{{\"result\":{{\"reinforced\":true,\"kind\":\"{s}\",\"id\":{d}}}}}",
+            .{ kind, id },
+        ) catch return "{\"error\":\"buf overflow\"}";
+    }
+
     if (matchMethod(msg, "coverage_gaps")) {
         const db = q.g_db orelse return "{\"error\":\"db not connected\"}";
         const project = extractString(msg, "project");
@@ -374,4 +397,18 @@ fn extractInt(msg: []const u8, field: []const u8) ?i32 {
     while (i < msg.len and msg[i] >= '0' and msg[i] <= '9') i += 1;
     if (i == num_start) return null;
     return std.fmt.parseInt(i32, msg[num_start..i], 10) catch null;
+}
+
+// Same as extractInt but i64 — entity/relation ids are BIGSERIAL and could
+// in principle exceed i32 range on a long-lived project.
+fn extractInt64(msg: []const u8, field: []const u8) ?i64 {
+    var key_buf: [64]u8 = undefined;
+    const key = std.fmt.bufPrint(&key_buf, "\"{s}\":", .{field}) catch return null;
+    const after = (std.mem.indexOf(u8, msg, key) orelse return null) + key.len;
+    var i = after;
+    while (i < msg.len and msg[i] == ' ') i += 1;
+    const num_start = i;
+    while (i < msg.len and msg[i] >= '0' and msg[i] <= '9') i += 1;
+    if (i == num_start) return null;
+    return std.fmt.parseInt(i64, msg[num_start..i], 10) catch null;
 }

@@ -151,6 +151,18 @@ pub fn noCovergroup(
     return out[0..end];
 }
 
+// reinforceEntity / reinforceRelation reset a row's strength to the
+// ceiling and last_reinforced_at to now() — the only way strength moves
+// back up; see PLAN.md Phase 10. Returns error.ReinforceFailed if id
+// doesn't exist in the table.
+pub fn reinforceEntity(db: *c.KrlDb, entity_id: i64) !void {
+    if (c.krl_reinforce_entity(db, entity_id) != 0) return error.ReinforceFailed;
+}
+
+pub fn reinforceRelation(db: *c.KrlDb, relation_id: i64) !void {
+    if (c.krl_reinforce_relation(db, relation_id) != 0) return error.ReinforceFailed;
+}
+
 // entityById writes one entity's full JSON record, bypassing the strength/
 // visibility filter that entities() applies — a row excluded from default
 // results is still reachable this way, by design (see PLAN.md Phase 10).
